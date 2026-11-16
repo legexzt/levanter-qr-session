@@ -51,6 +51,15 @@ if [ -n "$MISSING_PKGS" ]; then
   sudo apt-get install -y -qq $MISSING_PKGS
 fi
 
+# ---- PHP: web-root traversal -------------------------------------------------
+# nginx runs as www-data and must traverse from / down to the web root.
+# /home/ubuntu is 750 by default on EC2, so without this nginx gets
+# "stat() ... failed (13: Permission denied)" and every request 404s.
+sudo chmod 0751 /home/ubuntu
+sudo chmod 0755 "$REPO_DIR" "$PHP_APP_DIR" "$PHP_APP_DIR/public"
+sudo find "$PHP_APP_DIR" -type d -exec chmod 0755 {} +
+sudo find "$PHP_APP_DIR" -type f -exec chmod 0644 {} +
+
 # ---- PHP: runtime directories + permissions ---------------------------------
 # php-fpm runs as www-data: it must read the passcode hash and write the DB.
 sudo mkdir -p "$LEGEZT_DIR/config" "$LEGEZT_DIR/data" "$LEGEZT_DIR/storage"
