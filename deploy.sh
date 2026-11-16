@@ -7,6 +7,12 @@
 # Needs: git, sudo (passwordless, standard for the ubuntu user on EC2).
 set -euo pipefail
 
+# Serialize deploys: several pushes in a row trigger several workflow runs,
+# and concurrent runs would fight over apt/dpkg locks and git. Wait up to
+# 10 minutes for another deploy to finish, then run alone.
+exec 9>/tmp/legezt-deploy.lock
+flock -w 600 9 || { echo "deploy lock busy after 10 min, aborting"; exit 1; }
+
 REPO_DIR="/home/ubuntu/levanter-qr-session"
 APP_NAME="qr-session"
 PHP_APP_DIR="$REPO_DIR/php-dashboard"
