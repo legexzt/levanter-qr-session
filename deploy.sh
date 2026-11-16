@@ -34,15 +34,19 @@ pm2 save
 
 # ---- PHP: install packages (only the ones that are missing) -----------------
 export DEBIAN_FRONTEND=noninteractive
+# NOTE: the EC2 runs Ubuntu 22.04 (jammy), whose default repos ship PHP 8.1 —
+# php8.2 does not exist there, so "Unable to locate package php8.2" killed
+# every deploy. Use php8.1 (jammy default); the dashboard needs nothing newer.
 MISSING_PKGS=""
-for pkg in php8.2 php8.2-fpm php8.2-sqlite3 php8.2-curl nginx ffmpeg; do
+for pkg in php8.1 php8.1-fpm php8.1-sqlite3 php8.1-curl nginx ffmpeg; do
   if ! dpkg -s "$pkg" >/dev/null 2>&1; then
     MISSING_PKGS="$MISSING_PKGS $pkg"
   fi
 done
 if [ -n "$MISSING_PKGS" ]; then
   echo "installing missing packages:$MISSING_PKGS"
-  sudo apt-get update -qq
+  # The EC2 archive mirror occasionally answers 503 — retry once before giving up.
+  sudo apt-get update -qq || { sleep 20; sudo apt-get update -qq; }
   # shellcheck disable=SC2086
   sudo apt-get install -y -qq $MISSING_PKGS
 fi
@@ -68,10 +72,10 @@ if systemctl is-active --quiet nginx; then
 else
   sudo systemctl start nginx
 fi
-if systemctl is-active --quiet php8.2-fpm; then
-  sudo systemctl reload php8.2-fpm
+if systemctl is-active --quiet php8.1-fpm; then
+  sudo systemctl reload php8.1-fpm
 else
-  sudo systemctl start php8.2-fpm
+  sudo systemctl start php8.1-fpm
 fi
 
 # ---- Health checks -----------------------------------------------------------
