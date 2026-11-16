@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Levanter — WhatsApp Session</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #0b141a; color: #e9edef; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 8px 0 2px; }
+  .sub { color: #8696a0; font-size: 14px; margin-bottom: 18px; text-align: center; }
+  .card { background: #111b21; border: 1px solid #233138; border-radius: 16px; padding: 20px; width: 100%; max-width: 420px; text-align: center; }
+  .pill { display: inline-block; padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; margin-bottom: 14px; }
+  .pill.waiting { background: #f8c44f33; color: #f8c44f; border: 1px solid #f8c44f66; }
+  .pill.connected { background: #00a88433; color: #25d366; border: 1px solid #25d36666; }
+  .pill.unknown { background: #8696a033; color: #8696a0; border: 1px solid #8696a066; }
+  #qr { width: 100%; max-width: 320px; aspect-ratio: 1; background: #fff; border-radius: 12px; display: block; margin: 0 auto; }
+  .placeholder { width: 100%; max-width: 320px; aspect-ratio: 1; background: #1f2c34; border-radius: 12px; margin: 0 auto; display: flex; align-items: center; justify-content: center; color: #8696a0; font-size: 15px; padding: 20px; }
+  .meta { color: #8696a0; font-size: 13px; margin-top: 14px; line-height: 1.6; }
+  .meta b { color: #e9edef; }
+  .steps { text-align: left; font-size: 14px; line-height: 1.7; color: #d1d7db; margin: 14px 0 0; padding-left: 20px; }
+  button { cursor: pointer; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; padding: 12px 18px; margin-top: 12px; width: 100%; }
+  #refreshBtn { background: #00a884; color: #fff; }
+  #disconnectBtn { background: #3b0d0d; color: #ff8a80; border: 1px solid #ff8a8055; }
+  #disconnectBtn:disabled, #refreshBtn:disabled { opacity: .5; cursor: default; }
+  #msg { font-size: 14px; margin-top: 12px; min-height: 20px; }
+  #msg.ok { color: #25d366; }
+  #msg.err { color: #ff8a80; }
+  .foot { color: #54656f; font-size: 12px; margin-top: 18px; text-align: center; }
+</style>
+</head>
+<body>
+  <h1>Levanter — WhatsApp Session</h1>
+  <div class="sub">Scan the QR with WhatsApp &rsaquo; Linked Devices to connect.<br/>The QR refreshes automatically.</div>
+
+  <div class="card">
+    <span id="pill" class="pill unknown">Checking&hellip;</span>
+    <div id="qrWrap"><div class="placeholder">Loading QR&hellip;</div></div>
+    <div class="meta" id="meta"></div>
+    <ol class="steps" id="steps">
+      <li>Open <b>WhatsApp</b> on your phone</li>
+      <li>Go to <b>Settings &rsaquo; Linked Devices &rsaquo; Link a Device</b></li>
+      <li>Point your camera at the QR above</li>
+    </ol>
+    <button id="refreshBtn">Refresh QR now</button>
+    <button id="disconnectBtn">Disconnect WhatsApp</button>
+    <div id="msg"></div>
+  </div>
+
+  <div class="foot">Levanter QR Session Manager &middot; EC2 levanter-bot &middot; QR auto-refreshes every 15s</div>
+
+<script>
+  const pill = document.getElementById('pill')
+  const qrWrap = document.getElementById('qrWrap')
+  const meta = document.getElementById('meta')
+  const steps = document.getElementById('steps')
+  const msg = document.getElementById('msg')
+  const refreshBtn = document.getElementById('refreshBtn')
+  const disconnectBtn = document.getElementById('disconnectBtn')
+  let lastQrAt = null
+
+  function setMsg (text, cls) { msg.textContent = text; msg.className = cls || '' }
+
+  async function load () {
+    try {
+      const r = await fetch('/api/qr')
+      const d = await r.json()
+      if (d.status === 'connected') {
+        pill.textContent = 'Connected' + (d.account ? ' — ' + d.account : '')
+        pill.className = 'pill connected'
+        qrWrap.innerHTML = '<div class="placeholder">WhatsApp is connected.<br/>Use Disconnect below to unlink and get a fresh QR.</div>'
+        steps.style.display = 'none'
+      } else if (d.status === 'waiting' && d.qrDataUrl) {
+        pill.textContent = 'Waiting to scan'
+        pill.className = 'pill waiting'
+        steps.style.display = ''
+        if (d.qrUpdatedAt !== lastQrAt) {
+          lastQrAt = d.qrUpdatedAt
+          qrWrap.innerHTML = ''
+          const img = document.createElement('img')
+          img.id = 'qr'
+          img.alt = 'WhatsApp pairing QR'
+          img.src = d.qrDataUrl
+          qrWrap.appendChild(img)
+        }
+      } else {
+        pill.textContent = d.levanterUp === false ? 'Levanter is down' : 'Waiting for QR…'
+        pill.className = 'pill unknown'
+        steps.style.display = ''
+        if (!qrWrap.querySelector('.placeholder')) {
+          qrWrap.innerHTML = '<div class="placeholder">Waiting for Levanter to show a QR…<br/>It appears shortly after the bot (re)starts.</div>'
+        }
+      }
+      const parts = []
+      if (d.qrUpdatedAt) parts.push('QR updated: <b>' + new Date(d.qrUpdatedAt).toLocaleTimeString() + '</b> (' + (d.qrAgeSec != null ? d.qrAgeSec + 's ago' : '—') + ')')
+      if (d.account) parts.push('Account: <b>' + d.account + '</b>')
+      if (d.lastError) parts.push('Note: ' + d.lastError)
+      meta.innerHTML = parts.join('<br/>') || 'Checking status…'
+    } catch (e) {
+      pill.textContent = 'Cannot reach server'
+      pill.className = 'pill unknown'
+      meta.textContent = 'Could not load /api/qr — ' + e.message
+    }
+  }
+
+  refreshBtn.addEventListener('click', () => { setMsg('Refreshing…'); load().then(() => setMsg('Refreshed.', 'ok')) })
+  disconnectBtn.addEventListener('click', async () => {
+    if (!confirm('Disconnect WhatsApp from Levanter? A fresh QR will be generated and you will need to scan again.')) return
+    disconnectBtn.disabled = true
+    setMsg('Disconnecting… this takes up to a minute (restart + fresh QR).')
+    try {
+      const r = await fetch('/api/disconnect', { method: 'POST' })
+      const d = await r.json()
+      if (d.ok) {
+        setMsg(d.freshQrAvailable ? 'Disconnected. A fresh QR is ready — scan it above.' : 'Disconnected. Waiting for a fresh QR…', 'ok')
+        lastQrAt = null
+      } else {
+        setMsg('Disconnect failed: ' + (d.error || 'unknown error'), 'err')
+      }
+    } catch (e) {
+      setMsg('Disconnect failed: ' + e.message, 'err')
+    }
+    disconnectBtn.disabled = false
+    load()
+  })
+
+  load()
+  setInterval(load, 15000)
+</script>
+</body>
+</html>
