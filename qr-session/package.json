@@ -1,0 +1,1 @@
+{"dependencies":{"express":"^5.3.0","jsqr":"^1.4.0","qrcode":"^1.5.4"},"description":"QR session manager for Levanter (WhatsApp bot) — scan to connect, one tap to disconnect","engines":{"node":">=18"},"main":"server.js","name":"levanter-qr-session","scripts":{"start":"node server.js"},"version":"1.0.0"}
