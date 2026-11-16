@@ -1,15 +1,50 @@
-# Levanter QR Session Manager
+# LEGEZT — Private WhatsApp Dashboard
 
-Your **own** WhatsApp session website for Levanter — scan a QR to connect
-your WhatsApp from anywhere, and disconnect it with one tap. No more
-reading QR codes out of a terminal.
+Your **own** WhatsApp system — a passcode-protected PHP dashboard (`http://16.4.24.87/`)
+plus the QR session service below. Scan a QR to connect your WhatsApp from anywhere,
+and disconnect it with one tap. No more reading QR codes out of a terminal.
 
-- **Live QR page:** `http://16.4.24.87:8080/` — shows Levanter's current
-  WhatsApp pairing QR as a big scannable image, auto-refreshed every 15s.
+- **Dashboard:** `http://16.4.24.87/` — passcode gate, then a WordPress-style admin panel
+  (Dashboard, Connect/QR, Chats, Media, Plugins, Listener, Settings). Dashboard and
+  Connect are live in Phase 1; the rest arrive in Phase 2/3.
+- **Live QR page:** `http://16.4.24.87:8080/` — shows the current WhatsApp pairing QR
+  as a big scannable image, auto-refreshed every 15s.
 - **Status:** Waiting to scan / Connected (with the linked number when known).
-- **Disconnect:** one tap deletes Levanter's WhatsApp auth files and
-  restarts it, so a fresh QR is generated.
+- **Disconnect:** one tap deletes the WhatsApp auth files and restarts the bot, so a fresh QR is generated.
 - **CI/CD:** every push to `main` auto-deploys to the EC2 via GitHub Actions.
+
+## LEGEZT PHP dashboard (Phase 1)
+
+**Security first — no Cloudflare, no external services:**
+- Passcode gate on open. Argon2id hash stored at `/var/legezt/config/passcode.hash`
+  (mode 0600/0640, outside the web root). Set it once on the EC2:
+  `sudo php /home/ubuntu/levanter-qr-session/php-dashboard/scripts/set-passcode.php`
+- 5 failed attempts per IP → 15-minute lockout (SQLite, `/var/legezt/data/legezt.sqlite`).
+  Every login attempt is logged. Honeypot field, CSRF + 10-minute form tokens,
+  scanner User-Agent blocking, strict security headers, HttpOnly + SameSite=Strict sessions
+  (Secure flag only on HTTPS), 30-minute idle timeout, 8-hour absolute timeout.
+- The QR page reuses the Node qr-session service (`http://127.0.0.1:8080/api/qr`) —
+  the QR is never reimplemented in PHP.
+
+**Layout:**
+
+```
+php-dashboard/
+├── config.php             # constants + paths (/var/legezt/...)
+├── lib/                   # auth.php, db.php, qr.php, security.php
+├── public/                # web root: index.php, health.php, assets/
+├── views/                 # login, layout, dashboard, connect + Phase 2/3 placeholders
+├── scripts/set-passcode.php
+└── nginx/legezt.conf      # nginx site (port 80, php-fpm)
+```
+
+**Health:** `GET /health` → `{ ok, whatsapp, levanterUp, storage_used_mb, uptime }`
+(no login required).
+
+**Deploy:** `deploy.sh` installs php8.2/php-fpm/nginx/ffmpeg if missing, creates
+`/var/legezt/{config,data,storage}` with www-data permissions, installs the nginx
+site, reloads nginx + php-fpm, and health-checks both the QR service and the PHP site.
+Port 80 is open in the `levanter-sg` security group.
 
 ## How the QR is captured
 
