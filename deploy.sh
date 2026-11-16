@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # deploy.sh — run on the EC2 by the GitHub Actions pipeline.
 # Pulls the latest code, installs deps, (re)starts the qr-session app via PM2.
+# Sync test 17 Nov 2026: GitHub -> AWS auto-deploy verification.
 set -euo pipefail
 
 REPO_DIR="/home/ubuntu/levanter-qr-session"
