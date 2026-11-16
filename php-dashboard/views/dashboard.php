@@ -114,12 +114,18 @@ try {
             Waiting to scan — open Connect to scan the QR
         </p>
     <?php else: ?>
-        <p class="status-line">
-            <span class="dot grey" aria-hidden="true"></span>
-            Unknown — QR service unreachable
-        </p>
         <?php if ($qr === null): ?>
+            <p class="status-line">
+                <span class="dot grey" aria-hidden="true"></span>
+                QR service unreachable
+            </p>
             <p class="muted">The qr-session service on port 8080 is not responding.</p>
+        <?php else: ?>
+            <p class="status-line">
+                <span class="dot amber" aria-hidden="true"></span>
+                Not connected yet — no fresh QR
+            </p>
+            <p class="muted">Open Connect to see the pairing QR and link WhatsApp.</p>
         <?php endif; ?>
     <?php endif; ?>
 </section>
