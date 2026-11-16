@@ -1,0 +1,27 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 16.4.24.87
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            if [ -d /home/ubuntu/levanter-qr-session/.git ]; then
+              cd /home/ubuntu/levanter-qr-session
+              git pull --ff-only origin main
+            else
+              git clone https://github.com/legexzt/levanter-qr-session.git /home/ubuntu/levanter-qr-session
+              cd /home/ubuntu/levanter-qr-session
+            fi
+            bash deploy.sh
