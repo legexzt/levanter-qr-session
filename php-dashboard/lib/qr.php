@@ -1,5 +1,5 @@
 <?php
-// Implements a server-side client for the local QR session HTTP API.
+// Implements a server-side client for the local legezt-bot HTTP API (port 3001).
 // Called by public/index.php and the dashboard and connect views.
 // Requires config.php and either cURL or PHP HTTP stream support.
 declare(strict_types=1);
@@ -105,4 +105,9 @@ function qr_health(): ?array
 function qr_disconnect(): ?array
 {
     return qr_post('/api/disconnect');
+}
+
+function qr_connect(): ?array
+{
+    return qr_post('/api/connect');
 }
