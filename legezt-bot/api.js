@@ -66,6 +66,36 @@ function createApi(bot, opts) {
     log('error', `${context}: ${detail}`);
   }
 
+  function requireLocalApiKey(req, res) {
+    if (!isLocalhost(req)) {
+      res.status(403).json({
+        ok: false,
+        error: 'localhost-only'
+      });
+      return false;
+    }
+
+    const key = getRelayKey();
+    if (key === null) {
+      res.status(503).json({
+        ok: false,
+        error: 'relay-key-not-configured',
+        detail: 'Create /var/legezt/config/relay.key (mode 0640) or set LEGEZT_RELAY_KEY'
+      });
+      return false;
+    }
+
+    if (req.header('x-api-key') !== key) {
+      res.status(401).json({
+        ok: false,
+        error: 'bad-api-key'
+      });
+      return false;
+    }
+
+    return true;
+  }
+
   app.get('/', (req, res) => {
     try {
       return res.json({
@@ -129,27 +159,8 @@ function createApi(bot, opts) {
 
   app.post('/api/muse-relay', async (req, res) => {
     try {
-      if (!isLocalhost(req)) {
-        return res.status(403).json({
-          ok: false,
-          error: 'localhost-only'
-        });
-      }
-
-      const key = getRelayKey();
-      if (key === null) {
-        return res.status(503).json({
-          ok: false,
-          error: 'relay-key-not-configured',
-          detail: 'Create /var/legezt/config/relay.key (mode 0640) or set LEGEZT_RELAY_KEY'
-        });
-      }
-
-      if (req.header('x-api-key') !== key) {
-        return res.status(401).json({
-          ok: false,
-          error: 'bad-api-key'
-        });
+      if (!requireLocalApiKey(req, res)) {
+        return;
       }
 
       const { message, from } = req.body || {};
@@ -193,6 +204,44 @@ function createApi(bot, opts) {
       });
     } catch (err) {
       reportError('POST /api/muse-relay failed', err);
+      return res.status(500).json({ ok: false, error: 'internal' });
+    }
+  });
+
+  app.post('/api/pairing-code', async (req, res) => {
+    try {
+      if (!requireLocalApiKey(req, res)) {
+        return;
+      }
+
+      const result = await bot.requestPairingCode();
+
+      if (!result.ok) {
+        const statusByError = {
+          'not-waiting': 409,
+          'phone-not-configured': 503,
+          'no-socket': 503,
+          'too-soon': 429,
+          'request-failed': 502
+        };
+        return res.status(statusByError[result.error]).json({
+          ok: false,
+          error: result.error
+        });
+      }
+
+      const qr = bot.getQr() || {};
+      const qrAgeSec = qr.qrAgeSec ?? null;
+
+      log('info', 'Pairing code refreshed on demand');
+
+      return res.status(200).json({
+        ok: true,
+        pairingCode: result.pairingCode,
+        qrAgeSec
+      });
+    } catch (err) {
+      reportError('POST /api/pairing-code failed', err);
       return res.status(500).json({ ok: false, error: 'internal' });
     }
   });
