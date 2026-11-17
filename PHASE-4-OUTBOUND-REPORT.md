@@ -76,14 +76,14 @@ the queue only sends while connected — its assertions are unchanged.
 
 ## Deploy + live verification
 
-- Commit: **TODO** — one gh CLI push (files: legezt-bot/lib/outbound.js,
+- Commit: **16b36c6** — one gh CLI push (files: legezt-bot/lib/outbound.js,
   legezt-bot/bot.js, legezt-bot/test/test_outbound.js,
   legezt-bot/test/test_spam_fix.js, PHASE-4-OUTBOUND-REPORT.md).
   (SPEC.md §13/§9 was updated in the local workspace copy only — it is
   not part of this repo.)
-- GitHub Actions run **TODO** — completed, success.
+- GitHub Actions run **44072857483** — completed, success, 15s.
 - Live check (my own curl): dashboard **200**, /health
-  `{"ok":true,"whatsapp":"connected","levanterUp":true,"botUp":true,...}`.
+  `{"ok":true,"whatsapp":"connected","levanterUp":true,"botUp":true,"storage_used_mb":0.03}`.
 
 ## Honest limits
 
