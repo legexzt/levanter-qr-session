@@ -3,3 +3,6 @@ node_modules/
 *.pem
 *.log
 .deploy/
+auth/
+config/
+storage/
