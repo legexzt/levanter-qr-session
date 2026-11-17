@@ -25,11 +25,12 @@ git pull --ff-only origin main
 cd "$REPO_DIR/qr-session"
 npm install --no-audit --no-fund --omit=dev
 
-if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
-  pm2 restart "$APP_NAME" --update-env
-else
-  pm2 start server.js --name "$APP_NAME"
-fi
+# P0 (F-05): start/restart via the ecosystem file so the supervision limits
+# (min_uptime, max_restarts, max_memory_restart, backoff) apply. startOrRestart
+# starts the app if it is missing and restarts it with the new config if it
+# is running. The WARN fallback keeps a qr-session problem from aborting the
+# whole deploy (set -e); the health checks at the end show the real status.
+pm2 startOrRestart "$REPO_DIR/ecosystem.config.js" --only "$APP_NAME" || echo "WARN: $APP_NAME ecosystem start failed - check pm2 status"
 pm2 save
 
 # ---- Node: legezt-bot (Phase 2 — OUR OWN WhatsApp bot, port 3001) ------------
@@ -117,11 +118,9 @@ sudo mkdir -p "$LEGEZT_DIR/storage/vault"
 sudo chown ubuntu:ubuntu "$LEGEZT_DIR/storage" "$LEGEZT_DIR/storage/vault"
 sudo chmod 0700 "$LEGEZT_DIR/storage" "$LEGEZT_DIR/storage/vault"
 
-if pm2 describe "$BOT_NAME" >/dev/null 2>&1; then
-  pm2 restart "$BOT_NAME" --update-env
-else
-  pm2 start server.js --name "$BOT_NAME"
-fi
+# P0 (F-05): same ecosystem start as qr-session (see above). Levanter is
+# NOT restarted here — it is the fallback and only the parent stops it.
+pm2 startOrRestart "$REPO_DIR/ecosystem.config.js" --only "$BOT_NAME" || echo "WARN: $BOT_NAME ecosystem start failed - check pm2 status"
 pm2 save
 
 # ---- PHP: install packages (only the ones that are missing) -----------------

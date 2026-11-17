@@ -26,6 +26,12 @@ const express = require('express')
 const { extractQrString, qrStringToDataUrl } = require('./qr-extract')
 
 const PORT = parseInt(process.env.PORT || '8080', 10)
+// P0 (F-31): bind to localhost only. The dashboard no longer proxies this
+// service (it uses legezt-bot on 127.0.0.1:3001), and binding 0.0.0.0 with
+// no auth exposed the live QR — and a disconnect endpoint that DELETES auth
+// files — to the whole internet. Localhost keeps the deploy health check
+// (curl http://localhost:8080/api/health) and any same-host tooling working.
+const HOST = process.env.HOST || '127.0.0.1'
 const LEVANTER_DIR = process.env.LEVANTER_DIR || '/home/ubuntu/levanter'
 const PM2_NAME = process.env.PM2_NAME || 'levanter'
 const POLL_MS = parseInt(process.env.POLL_MS || '10000', 10)
@@ -232,6 +238,6 @@ app.get('/', (req, res) => {
 setInterval(() => { pollOnce().catch(e => log('poll error:', e.message)) }, POLL_MS)
 pollOnce().catch(e => log('initial poll error:', e.message))
 
-app.listen(PORT, '0.0.0.0', () => {
-  log(`qr-session listening on http://0.0.0.0:${PORT} (levanter dir: ${LEVANTER_DIR})`)
+app.listen(PORT, HOST, () => {
+  log(`qr-session listening on http://${HOST}:${PORT} (levanter dir: ${LEVANTER_DIR})`)
 })

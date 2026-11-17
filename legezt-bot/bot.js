@@ -15,6 +15,8 @@ const { loadPlugins } = require('./plugins/loader.js');
 const { PairingCode } = require('./pairing.js');
 const { suggestCommand } = require('./lib/similar.js');
 const { check: checkRateLimit, prune: pruneRateLimit } = require('./lib/ratelimit.js');
+// P0 (F-08/F-09/F-10): reason-aware reconnect table + 515-guard.
+const { decideReconnect, FALSE_LOGOUT_WINDOW_MS, MAX_CONSECUTIVE_BAD_SESSION } = require('./lib/reconnect.js');
 const { logUsage } = require('./usage.js');
 const { autoSaveMedia } = require('./lib/media.js');
 
@@ -49,6 +51,16 @@ class LegeztBot {
     this._connecting = null;
     this._generation = 0;
     this._loggedOut = false;
+    // P0 (F-06): liveness probe — last time any socket activity was seen
+    // (connection.update, messages.upsert, creds.update, or a sent message).
+    this._lastActivityAt = Date.now();
+    // P0 (F-08): 515-guard — timestamp of the last 515 close, and whether
+    // the one 401 it excuses has already been consumed.
+    this._last515At = null;
+    this._ignored401After515 = false;
+    // P0 (F-09): consecutive badSession (500) closes, capped so a corrupt
+    // session cannot loop forever (no session backup exists yet, P1 F-13).
+    this._consecutiveBadSession = 0;
   }
 
   async start() {
@@ -112,7 +124,12 @@ class LegeztBot {
           syncFullHistory: false
         });
         this.sock = sock;
-        sock.ev.on('creds.update', saveCreds);
+        // P0 (F-06): a credential update is socket activity — refresh the
+        // liveness timestamp so a quiet-but-alive socket is not recreated.
+        sock.ev.on('creds.update', (update) => {
+          this._lastActivityAt = Date.now();
+          saveCreds(update);
+        });
         sock.ev.on('connection.update', (update) => {
           this._onConnectionUpdate(update, sock)
             .catch((err) => this._fail('Connection handler failed', err));
@@ -140,6 +157,8 @@ class LegeztBot {
   async _onConnectionUpdate(update, sock) {
     try {
       if (sock && this.sock !== sock) return;
+      // P0 (F-06): any connection event is socket activity.
+      this._lastActivityAt = Date.now();
       const { connection, lastDisconnect, qr } = update || {};
 
       if (typeof qr === 'string' && qr.length > 0) {
@@ -166,6 +185,8 @@ class LegeztBot {
         this._clearQr();
         this.reconnectAttempts = 0;
         this._loggedOut = false;
+        this._consecutiveBadSession = 0;
+        this._ignored401After515 = false;
         this.lastError = null;
         this.log('info', `Connected as ${this.account}`);
         return;
@@ -178,16 +199,55 @@ class LegeztBot {
       const code = lastDisconnect?.error?.output?.statusCode;
       this.lastError = lastDisconnect?.error?.message || `Connection closed (code ${code})`;
 
-      if (code === DisconnectReason.loggedOut) {
+      // P0 (F-08/F-09/F-10): reason-aware reconnect. The old code had one
+      // branch (401 -> stop, everything else -> backoff). That retried a
+      // forbidden account forever, fought a replaced session, and killed a
+      // healthy bot on the 515 -> 401 false-logout sequence.
+      if (code === DisconnectReason.restartRequired) {
+        this._last515At = Date.now();
+      }
+      const recent515 = this._last515At !== null
+        && (Date.now() - this._last515At) < FALSE_LOGOUT_WINDOW_MS;
+      if (code === DisconnectReason.badSession) {
+        this._consecutiveBadSession += 1;
+      } else {
+        this._consecutiveBadSession = 0;
+      }
+      const decision = decideReconnect(code, {
+        recent515,
+        ignored401After515: this._ignored401After515,
+        consecutiveBadSession: this._consecutiveBadSession
+      });
+      // The 515-guard excuses exactly one 401 — consume it so a second 401
+      // is treated as a real logout instead of looping forever.
+      if (code === DisconnectReason.loggedOut && decision.action === 'immediate') {
+        this._ignored401After515 = true;
+        this._last515At = null;
+      }
+
+      if (decision.action === 'stop') {
+        // Terminal: do not auto-reconnect. _loggedOut doubles as the
+        // "do not auto-reconnect" flag (the watchdog and resume() honour it);
+        // the specific reason is in lastError and the log line.
         this._loggedOut = true;
         this.status = 'disconnected';
-        this.log('warn', 'Logged out from phone — fresh scan needed (auth files kept, nothing deleted)');
+        this.log('warn', `Connection closed (code ${code}) — STOPPED: ${decision.reason}`);
         return;
       }
 
       this._loggedOut = false;
       this.status = 'unknown';
-      this.log('warn', `Connection closed (code ${code}) — reconnecting`);
+      if (decision.action === 'immediate') {
+        // 515 (or a 401 excused by the 515-guard): reconnect NOW, no backoff,
+        // and do not count the attempt.
+        this.log('warn', `Connection closed (code ${code}) — ${decision.reason}`);
+        if (!this.paused) {
+          this._connect().catch((err) => this._fail('Reconnect failed', err));
+        }
+        return;
+      }
+
+      this.log('warn', `Connection closed (code ${code}) — ${decision.reason}`);
       const delay = Math.min(2000 * (2 ** this.reconnectAttempts), 30000);
       this.reconnectAttempts += 1;
       if (!this.paused) {
@@ -202,7 +262,34 @@ class LegeztBot {
   }
 
   async _watchdogTick() {
-    if (this.paused || this._loggedOut || this.status === 'connected') return;
+    if (this.paused || this._loggedOut) return;
+    // P0 (F-06) — connected-state liveness probe. The old watchdog returned
+    // immediately when connected, so a socket that died without emitting
+    // connection.update (the Levanter 7-hour silent death) was never noticed.
+    // Baileys has its own 30s keep-alive (it closes a socket with no frames
+    // for 35s), so this is the second layer: it catches a socket that is
+    // closed at the transport level, or a handler that stopped running.
+    if (this.status === 'connected') {
+      const ws = this.sock?.ws;
+      // sock.ws is Baileys' WebSocketClient; isOpen is its canonical check
+      // (readyState === OPEN). The readyState fallback matches _connect().
+      const wsOpen = !!(ws && (ws.isOpen || ws.readyState === 1));
+      if (!this.sock || !wsOpen) {
+        this.log('warn', 'Liveness probe: socket not open while connected — recreating socket');
+        await this._recreateSocket();
+        return;
+      }
+      // Last-activity safety net. A healthy account can be quiet, so this
+      // threshold is long (60 min) — a reconnect is cheap, but a silent
+      // death used to cost hours. Tunable: lower it if silent deaths recur,
+      // raise it if quiet nights cause too many reconnects.
+      if (Date.now() - this._lastActivityAt > 60 * 60 * 1000) {
+        this.log('warn', 'Liveness probe: no activity for 60m while connected — recreating socket');
+        await this._recreateSocket();
+        return;
+      }
+      return;
+    }
     const qrAge = this._qrAgeMs();
     if (this.status === 'waiting' && qrAge !== null && qrAge < 60000) return;
     this.log('warn', 'Watchdog: no fresh QR and not connected — recreating socket');
@@ -226,6 +313,8 @@ class LegeztBot {
   async _onMessagesUpsert({ messages, type }, sock) {
     try {
       if (type !== 'notify' || (sock && this.sock !== sock)) return;
+      // P0 (F-06): an incoming message is socket activity.
+      this._lastActivityAt = Date.now();
       for (const msg of messages || []) {
         // fromMe messages are the owner's own messages sent from their phone
         // (the linked account) — the owner triggers commands from their own
@@ -314,6 +403,8 @@ class LegeztBot {
     try {
       if (!this.sock) throw new Error('socket is not connected');
       await this.sock.sendMessage(jid, { text });
+      // P0 (F-06): a successful send proves the socket is alive.
+      this._lastActivityAt = Date.now();
       return true;
     } catch (err) {
       this._fail(`Failed to send text to ${jid}`, err);
@@ -422,6 +513,9 @@ class LegeztBot {
       qrFresh: qrAge !== null && qrAge < this.QR_MAX_AGE_MS,
       paused: this.paused,
       uptimeSec: Math.max(0, Math.floor((Date.now() - this.startedAt) / 1000)),
+      // P0 (F-06): seconds since the last socket activity, so the Ops page
+      // can show liveness instead of only "connected".
+      lastActivitySec: Math.max(0, Math.floor((Date.now() - this._lastActivityAt) / 1000)),
       lastError: this.lastError
     };
   }
