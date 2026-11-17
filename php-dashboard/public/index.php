@@ -295,6 +295,9 @@ $allowedPages = [
     'media',
     'plugins',
     'listener',
+    'usage',
+    'vault',
+    'logs',
     'ops',
     'settings',
 ];
@@ -314,6 +317,9 @@ $titles = [
     'media' => 'Media & Storage',
     'plugins' => 'Plugins',
     'listener' => 'Listener & Learning',
+    'usage' => 'AI Usage',
+    'vault' => 'Secret Vault',
+    'logs' => 'Logs & Errors',
     'ops' => 'Ops & Terminal',
     'settings' => 'Settings',
 ];

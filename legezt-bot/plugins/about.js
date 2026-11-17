@@ -1,7 +1,10 @@
 // Replies with a short description of LEGEZT and its loaded command count.
 // Called by the LEGEZT plugin loader/relay for the .about command.
-// Needs only the standard reply function and the loaded plugins Map.
+// Needs only the standard reply function, the loaded plugins Map, and
+// lib/format.js for the shared reply style.
 'use strict';
+
+const { card } = require('../lib/format.js');
 
 module.exports = {
   name: 'about',
@@ -9,13 +12,13 @@ module.exports = {
   description: 'Show information about LEGEZT.',
   async run({ plugins, reply }) {
     const commandCount = plugins instanceof Map ? plugins.size : 0;
-    const message = [
-      '🤖 LEGEZT',
+    const message = card('🤖', 'LEGEZT', [
       "The owner's own WhatsApp bot — built on Baileys, not Levanter.",
       'Owner: Mohd Jibraan',
       `Loaded commands: ${commandCount}`,
-      'Send .help for the command list and .ping to check it is alive.'
-    ].join('\n');
+      '',
+      'Send _.help_ for the command list and _.ping_ to check it is alive.'
+    ]);
 
     await reply(message);
     return message;

@@ -133,10 +133,25 @@ function registerOpsRoutes(app, ctx) {
         type: vaultType(entry.originalName)
       }));
 
+      // Loaded plugins, for the dashboard Plugins page (Phase 3).
+      const plugins = [];
+      if (bot && bot.plugins instanceof Map) {
+        for (const plugin of bot.plugins.values()) {
+          if (!plugin || typeof plugin.command !== 'string') continue;
+          plugins.push({
+            name: typeof plugin.name === 'string' ? plugin.name : plugin.command,
+            command: plugin.command,
+            description: typeof plugin.description === 'string' ? plugin.description : ''
+          });
+        }
+      }
+      plugins.sort((a, b) => a.command.localeCompare(b.command));
+
       return res.json({
         ok: true,
         checkedAt: new Date().toISOString(),
         status: bot.getStatus() || {},
+        plugins,
         totals: {
           aiCalls: ai.count || 0,
           aiTokens: ai.tokens || 0,

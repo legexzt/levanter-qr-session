@@ -19,6 +19,7 @@ const { check: checkRateLimit, prune: pruneRateLimit } = require('./lib/ratelimi
 const { decideReconnect, FALSE_LOGOUT_WINDOW_MS, MAX_CONSECUTIVE_BAD_SESSION } = require('./lib/reconnect.js');
 const { logUsage } = require('./usage.js');
 const { autoSaveMedia } = require('./lib/media.js');
+const { errorCard } = require('./lib/format.js');
 
 class LegeztBot {
   constructor(opts = {}) {
@@ -360,6 +361,9 @@ class LegeztBot {
         this.log('info', `Plugin ${name} handling ${command} from ${from}`);
         const startedAt = Date.now();
         let ok = true;
+        // Loading reaction (SPEC 14): the owner can SEE the command is
+        // being worked on. ⏳ now, ✅ on success / ❌ on failure below.
+        await this._react(from, msg.key, '⏳');
         try {
           await plugin.run({
             sock: this.sock,
@@ -371,12 +375,17 @@ class LegeztBot {
             log: (level, msg) => this.log(level, msg),
             reply: async (t) => this._sendText(from, t)
           });
+          await this._react(from, msg.key, '✅');
         } catch (err) {
           ok = false;
           // Backstop: a plugin that throws (instead of replying a friendly
           // error) is logged here with its name, so it can never fail silently.
           this._fail(`Plugin ${name} failed`, err);
-          await this._sendText(from, `Plugin ${name} failed.`);
+          await this._sendText(from, errorCard('Something went wrong', [
+            `The ${name} command failed.`,
+            'Try again in a bit — if it keeps failing, tell the owner.'
+          ]));
+          await this._react(from, msg.key, '❌');
         } finally {
           // Usage event for the dashboard: every plugin invocation, success
           // or failure, with its duration. The chat JID is hashed inside
@@ -389,10 +398,34 @@ class LegeztBot {
     }
   }
 
+  // SPEC 14 (gap tolerance): normalise the command before lookup, on
+  // both the WhatsApp path and the relay path. Trim, collapse runs of
+  // spaces, and allow a space between '.' and the command name, so
+  // ". ai", ".  weather  Delhi" and ".ai   hello" all work. A gap must
+  // never be a reason for "unknown command".
   _parseCommand(text) {
-    const parts = text.trim().split(/\s+/);
+    const normalized = String(text || '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .replace(/^\.\s+/, '.');
+    const parts = normalized === '' ? [] : normalized.split(' ');
     const command = (parts.shift() || '').toLowerCase();
-    return { command, args: parts };
+    return { command, args: parts.filter((part) => part !== '') };
+  }
+
+  // Loading reaction (SPEC 14): react to the owner's message so he can
+  // SEE the command is loading. Best-effort — a failed reaction is
+  // logged once and never blocks the command or crashes the bot.
+  async _react(jid, key, emoji) {
+    try {
+      if (!this.sock || !jid || !key) return false;
+      await this.sock.sendMessage(jid, { react: { text: emoji, key } });
+      return true;
+    } catch (err) {
+      const detail = err && err.message ? String(err.message).slice(0, 120) : 'unknown error';
+      this.log('debug', `Reaction ${emoji} failed: ${detail}`);
+      return false;
+    }
   }
 
   _findPlugin(command) {
@@ -451,7 +484,10 @@ class LegeztBot {
     } catch (err) {
       ok = false;
       this._fail(`Plugin ${name} failed`, err);
-      return { reply: `Plugin ${name} failed.`, handledBy: name };
+      return { reply: errorCard('Something went wrong', [
+        `The ${name} command failed.`,
+        'Try again in a bit — if it keeps failing, tell the owner.'
+      ]), handledBy: name };
     } finally {
       logUsage({ type: 'plugin', command, chat: from, durationMs: Date.now() - startedAt, ok });
     }

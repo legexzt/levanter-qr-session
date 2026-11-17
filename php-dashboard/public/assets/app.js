@@ -13,6 +13,57 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+        // Collapsible sidebar (Phase 3): hamburger toggles the shell class;
+        // desktop remembers the choice in localStorage, mobile uses an
+        // overlay and closes on overlay click or Escape.
+        const shell = document.getElementById('admin-shell');
+        const toggle = document.getElementById('sidebar-toggle');
+        const overlay = document.getElementById('sidebar-overlay');
+        const SIDEBAR_KEY = 'legezt-sidebar-collapsed';
+
+        if (shell && toggle) {
+            try {
+                if (window.localStorage.getItem(SIDEBAR_KEY) === '1') {
+                    shell.classList.add('sidebar-collapsed');
+                    toggle.setAttribute('aria-expanded', 'false');
+                }
+            } catch {
+                // Private mode: the sidebar simply stays open.
+            }
+
+            const closeMobile = () => {
+                shell.classList.remove('sidebar-open');
+                overlay && overlay.setAttribute('aria-hidden', 'true');
+            };
+
+            toggle.addEventListener('click', () => {
+                if (window.innerWidth <= 759) {
+                    const open = shell.classList.toggle('sidebar-open');
+                    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+                    overlay && overlay.setAttribute('aria-hidden', open ? 'false' : 'true');
+                    return;
+                }
+
+                const collapsed = shell.classList.toggle('sidebar-collapsed');
+                toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                try {
+                    window.localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0');
+                } catch {
+                    // Ignore storage failures.
+                }
+            });
+
+            if (overlay) {
+                overlay.addEventListener('click', closeMobile);
+            }
+
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    closeMobile();
+                }
+            });
+        }
+
         const setPairingStatus = (message) => {
             const status = document.getElementById('pairing-status');
 

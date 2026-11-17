@@ -108,6 +108,83 @@ function ops_get(): ?array
     return ops_request_json('/api/ops', false);
 }
 
+// Parses one /api/ops payload into the shaped data the Usage, Vault, Logs
+// and Ops pages render. Returns null when the bot did not answer, so the
+// pages can say "unavailable" instead of showing zeros. The Ops page
+// keeps its own inline parsing; these pages share this helper.
+function ops_parsed(): ?array
+{
+    $ops = ops_get();
+
+    if (!is_array($ops)) {
+        return null;
+    }
+
+    $totals = ['aiCalls' => 0, 'aiTokens' => 0, 'aiInputTokens' => 0, 'aiOutputTokens' => 0, 'tasks' => 0, 'tasksOk' => 0, 'tasksFail' => 0];
+    $byCommand = [];
+    $byDay = [];
+    $recent = [];
+    $pm2 = null;
+    $logOut = [];
+    $logError = [];
+    $vault = [];
+    $plugins = [];
+    $status = [];
+    $checkedAt = null;
+
+    $status = isset($ops['status']) && is_array($ops['status']) ? $ops['status'] : [];
+    $totals = array_merge($totals, isset($ops['totals']) && is_array($ops['totals']) ? $ops['totals'] : []);
+    $stats = isset($ops['stats']) && is_array($ops['stats']) ? $ops['stats'] : [];
+    $byCommandRaw = isset($stats['byCommand']) && is_array($stats['byCommand']) ? $stats['byCommand'] : [];
+    $byDayRaw = isset($stats['byDay']) && is_array($stats['byDay']) ? $stats['byDay'] : [];
+    $recent = isset($ops['recent']) && is_array($ops['recent']) ? $ops['recent'] : [];
+    $pm2 = isset($ops['pm2']) && is_array($ops['pm2']) ? $ops['pm2'] : null;
+    $logs = isset($ops['logs']) && is_array($ops['logs']) ? $ops['logs'] : [];
+    $logOut = isset($logs['out']) && is_array($logs['out']) ? $logs['out'] : [];
+    $logError = isset($logs['error']) && is_array($logs['error']) ? $logs['error'] : [];
+    $vault = isset($ops['vault']) && is_array($ops['vault']) ? $ops['vault'] : [];
+    $plugins = isset($ops['plugins']) && is_array($ops['plugins']) ? $ops['plugins'] : [];
+    $checkedAt = isset($ops['checkedAt']) && is_string($ops['checkedAt']) ? $ops['checkedAt'] : null;
+
+    foreach ($byCommandRaw as $name => $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $byCommand[] = [
+            'name' => (string) $name, 'count' => (int) ($row['count'] ?? 0),
+            'ok' => (int) ($row['ok'] ?? 0), 'fail' => (int) ($row['fail'] ?? 0),
+            'tokens' => (int) ($row['tokens'] ?? 0),
+        ];
+    }
+    usort($byCommand, static fn($a, $b) => $b['count'] <=> $a['count']);
+
+    foreach ($byDayRaw as $day => $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $byDay[] = [
+            'day' => (string) $day, 'count' => (int) ($row['count'] ?? 0),
+            'ok' => (int) ($row['ok'] ?? 0), 'fail' => (int) ($row['fail'] ?? 0),
+            'tokens' => (int) ($row['tokens'] ?? 0),
+        ];
+    }
+    usort($byDay, static fn($a, $b) => strcmp($b['day'], $a['day']));
+
+    return [
+        'status' => $status,
+        'totals' => $totals,
+        'byCommand' => $byCommand,
+        'byDay' => $byDay,
+        'recent' => $recent,
+        'pm2' => $pm2,
+        'logOut' => $logOut,
+        'logError' => $logError,
+        'vault' => $vault,
+        'plugins' => $plugins,
+        'checkedAt' => $checkedAt,
+    ];
+}
+
 // Asks the bot to restart (it exits; PM2 starts it again). Returns the
 // decoded reply, or null when the bot did not answer.
 function ops_restart(): ?array

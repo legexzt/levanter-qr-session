@@ -94,6 +94,23 @@ h2 {
   gap: 6px;
 }
 
+.sidebar nav,
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Classes the layout uses that had no rule yet (pre-existing gap). */
+.admin-page {
+  min-height: 100vh;
+}
+
+.status-dot-green {
+  background: var(--green);
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.14);
+}
+
 .nav-link {
   display: block;
   padding: 10px 12px;
@@ -903,5 +920,466 @@ input::placeholder {
 
   .login-page {
     padding: 16px;
+  }
+}
+
+/* ==========================================================================
+   Phase 3 theme — modern dark look (SPEC 14). Appended after the Phase 1/2
+   rules on purpose: these selectors win the cascade without touching the
+   earlier rules, so every class the views use keeps working.
+   ========================================================================== */
+
+:root {
+  --bg: #0a0c11;
+  --panel: #12151e;
+  --panel-2: #171b26;
+  --border: #232838;
+  --text: #eef1f6;
+  --muted: #9aa3b8;
+  --accent: #7c5cff;
+  --accent-2: #22d3ee;
+  --green: #34d399;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-head: 'Poppins', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  font-family: var(--font-ui);
+  background:
+    radial-gradient(900px 480px at 85% -10%, rgba(124, 92, 255, 0.14), transparent 60%),
+    radial-gradient(700px 420px at -10% 110%, rgba(34, 211, 238, 0.10), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+h1,
+h2,
+h3,
+.sidebar-brand,
+.login-brand {
+  font-family: var(--font-head);
+}
+
+::selection {
+  background: rgba(124, 92, 255, 0.45);
+  color: #fff;
+}
+
+/* Page-load animation: content fades and rises in, one card at a time. */
+@keyframes legezt-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.content > * {
+  animation: legezt-fade-up 0.45s ease both;
+}
+
+.content > *:nth-child(2) { animation-delay: 0.06s; }
+.content > *:nth-child(3) { animation-delay: 0.12s; }
+.content > *:nth-child(4) { animation-delay: 0.18s; }
+.content > *:nth-child(5) { animation-delay: 0.24s; }
+.content > *:nth-child(6) { animation-delay: 0.30s; }
+
+/* Sidebar: gradient panel, smooth slide, logo mark. */
+.sidebar {
+  width: 232px;
+  padding: 20px 14px;
+  background: linear-gradient(180deg, #141824 0%, #0f1220 100%);
+  border-right: 1px solid var(--border);
+  transition: width 0.25s ease, transform 0.25s ease;
+}
+
+.main,
+.main-area {
+  margin-left: 232px;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 2px 10px 20px;
+  color: var(--text);
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.sidebar-brand:hover {
+  color: #fff;
+}
+
+.logo-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 4px 12px rgba(124, 92, 255, 0.45));
+}
+
+.brand-text {
+  background: linear-gradient(90deg, #a78bfa, #22d3ee);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px;
+  border-left: 3px solid transparent;
+  border-radius: 10px;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+}
+
+.nav-link:hover {
+  background: #1b2130;
+  color: var(--text);
+  transform: translateX(2px);
+}
+
+.nav-link.active {
+  background: linear-gradient(90deg, rgba(124, 92, 255, 0.22), rgba(34, 211, 238, 0.10));
+  border-left-color: var(--accent);
+  color: #c7b8ff;
+}
+
+.nav-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  margin-right: 10px;
+  color: inherit;
+  flex: 0 0 auto;
+}
+
+.nav-glyph svg {
+  display: block;
+}
+
+/* Collapsed sidebar (desktop): icons only, labels hidden. */
+.admin-shell.sidebar-collapsed .sidebar {
+  width: 76px;
+  padding: 20px 10px;
+}
+
+.admin-shell.sidebar-collapsed .brand-text,
+.admin-shell.sidebar-collapsed .nav-label {
+  display: none;
+}
+
+.admin-shell.sidebar-collapsed .sidebar-brand {
+  justify-content: center;
+  padding: 2px 0 20px;
+}
+
+.admin-shell.sidebar-collapsed .nav-link {
+  justify-content: center;
+  padding: 11px 0;
+}
+
+.admin-shell.sidebar-collapsed .nav-glyph {
+  margin-right: 0;
+}
+
+.admin-shell.sidebar-collapsed .main-area {
+  margin-left: 76px;
+}
+
+/* Hamburger + mobile overlay. */
+.hamburger {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.hamburger:hover {
+  background: #1e2434;
+  border-color: #33405a;
+}
+
+.hamburger span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 2px;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.admin-shell.sidebar-collapsed .hamburger span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.admin-shell.sidebar-collapsed .hamburger span:nth-child(2) {
+  opacity: 0;
+}
+
+.admin-shell.sidebar-collapsed .hamburger span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  display: none;
+  background: rgba(4, 6, 12, 0.6);
+  backdrop-filter: blur(2px);
+}
+
+/* Cards: glass touch, shadow, hover lift. */
+.card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 55%),
+    var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.card:hover {
+  border-color: #2e3650;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.36);
+}
+
+.card h2 {
+  font-size: 19px;
+}
+
+.card-status {
+  border-left: 4px solid var(--accent);
+}
+
+/* Stat cards: gradient accent bar + icon. */
+.stat-card {
+  position: relative;
+  overflow: hidden;
+  padding-top: 20px;
+}
+
+.stat-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+}
+
+.stat-accent-ai::before {
+  background: linear-gradient(90deg, #7c5cff, #22d3ee);
+}
+
+.stat-accent-tasks::before {
+  background: linear-gradient(90deg, #34d399, #22d3ee);
+}
+
+.stat-accent-vault::before {
+  background: linear-gradient(90deg, #f59e0b, #f472b6);
+}
+
+.stat-accent-storage::before {
+  background: linear-gradient(90deg, #38bdf8, #7c5cff);
+}
+
+.stat-icon {
+  display: inline-block;
+  margin-bottom: 10px;
+  font-size: 22px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
+}
+
+.stat-card h3 {
+  margin-bottom: 4px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.stat-card p a {
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.stat-card p a:hover {
+  text-decoration: underline;
+}
+
+/* Buttons: gradient primary, smooth hover. */
+.btn.primary,
+.button-primary {
+  background: linear-gradient(90deg, #7c5cff, #5b8cff);
+  border-color: transparent;
+  box-shadow: 0 6px 18px rgba(124, 92, 255, 0.35);
+}
+
+.btn.primary:hover,
+.button-primary:hover {
+  filter: brightness(1.1);
+}
+
+.btn {
+  transition: transform 0.15s ease, filter 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+/* Topbar: sticky, blurred glass. */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: rgba(18, 21, 30, 0.88);
+  backdrop-filter: blur(8px);
+}
+
+.topbar-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Error log view: red-tinted so errors are recognisable at a glance. */
+.log-view-error {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.06);
+  color: #fca5a5;
+}
+
+/* Login: centred logo mark above the brand. */
+.login-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 14px;
+  filter: drop-shadow(0 8px 20px rgba(124, 92, 255, 0.5));
+}
+
+.login-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0) 50%),
+    var(--panel);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.login-brand {
+  background: linear-gradient(90deg, #a78bfa, #22d3ee);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Data tables: row hover so long lists stay readable. */
+.data-table tr:hover td {
+  background: rgba(124, 92, 255, 0.05);
+}
+
+/* Phase 3 responsive: off-canvas sidebar on mobile (overrides the
+   Phase 1 static-sidebar rule above — this block is later in the file). */
+@media (max-width: 759px) {
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 10;
+    width: 248px;
+    padding: 20px 14px;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    border-bottom: 0;
+    transform: translateX(-105%);
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+  }
+
+  .admin-shell.sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .admin-shell.sidebar-open .hamburger span:nth-child(1) {
+    transform: translateY(7px) rotate(45deg);
+  }
+
+  .admin-shell.sidebar-open .hamburger span:nth-child(2) {
+    opacity: 0;
+  }
+
+  .admin-shell.sidebar-open .hamburger span:nth-child(3) {
+    transform: translateY(-7px) rotate(-45deg);
+  }
+
+  .admin-shell.sidebar-open .sidebar-overlay {
+    display: block;
+  }
+
+  .sidebar nav {
+    flex-direction: column;
+    gap: 6px;
+    overflow-x: visible;
+    padding-bottom: 0;
+  }
+
+  .nav-link {
+    flex: none;
+    white-space: normal;
+  }
+
+  .admin-shell.sidebar-collapsed .sidebar {
+    width: 248px;
+    padding: 20px 14px;
+  }
+
+  .admin-shell.sidebar-collapsed .brand-text,
+  .admin-shell.sidebar-collapsed .nav-label {
+    display: inline;
+  }
+
+  .admin-shell.sidebar-collapsed .sidebar-brand {
+    justify-content: flex-start;
+    padding: 2px 10px 20px;
+  }
+
+  .admin-shell.sidebar-collapsed .nav-link {
+    justify-content: flex-start;
+    padding: 10px 12px;
+  }
+
+  .admin-shell.sidebar-collapsed .nav-glyph {
+    margin-right: 10px;
+  }
+
+  .admin-shell.sidebar-collapsed .main-area {
+    margin-left: 0;
   }
 }
