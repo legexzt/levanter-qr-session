@@ -22,6 +22,17 @@ const { autoSaveMedia } = require('./lib/media.js');
 const { archive, extractMessage, noteChatName, getChatDisplayName, isGroupJid } = require('./lib/chats.js');
 const { errorCard } = require('./lib/format.js');
 
+// Spam fix (Phase 4): on every (re)connect WhatsApp re-delivers recent
+// unread messages as notify, and Baileys can deliver the same message
+// twice — without a gate the bot answers old commands again on every
+// restart (one command -> many reactions/replies). The gate is two parts:
+// (1) FRESHNESS_GRACE_MS — only messages sent after the bot connected
+// (minus a small grace for clock skew) are commands; (2) a bounded
+// message-ID set — one ID is answered at most once. The gate covers the
+// COMMAND path only; archiving and media auto-save run for all messages.
+const FRESHNESS_GRACE_MS = 15000;
+const MAX_SEEN_MESSAGE_IDS = 2000;
+
 class LegeztBot {
   constructor(opts = {}) {
     this.authDir = opts.authDir || process.env.LEGEZT_AUTH_DIR || '/var/legezt/auth';
@@ -63,6 +74,11 @@ class LegeztBot {
     // P0 (F-09): consecutive badSession (500) closes, capped so a corrupt
     // session cannot loop forever (no session backup exists yet, P1 F-13).
     this._consecutiveBadSession = 0;
+    // Spam fix (Phase 4): when this connection opened (ms epoch, set on
+    // connection === 'open'), and the message IDs already answered in this
+    // process (bounded, FIFO eviction — see _noteMessageSeen).
+    this._connectedAt = null;
+    this._seenMessageIds = new Set();
   }
 
   async start() {
@@ -189,6 +205,10 @@ class LegeztBot {
         this._loggedOut = false;
         this._consecutiveBadSession = 0;
         this._ignored401After515 = false;
+        // Spam fix (Phase 4): this connection's start time — the freshness
+        // gate compares every incoming message against it, so messages
+        // sent before this (re)connect are never answered again.
+        this._connectedAt = Date.now();
         this.lastError = null;
         this.log('info', `Connected as ${this.account}`);
         return;
@@ -345,6 +365,18 @@ class LegeztBot {
           });
         if (!text.startsWith('.')) continue;
 
+        // Spam fix (Phase 4): only REAL-TIME commands are answered.
+        // (1) Freshness — a message sent before this connection started
+        // (minus the grace) is a replay from an earlier session, not a
+        // new command: ignore it silently — no reaction, no reply, no
+        // usage event. The archiver above already recorded it, and the
+        // training store keeps the full history.
+        if (!this._isFreshMessage(msg)) continue;
+        // (2) Dedup — Baileys can deliver the same message twice. One
+        // message ID is answered at most once: a repeat delivery is
+        // skipped entirely, so one command = one reaction + one reply.
+        if (!this._noteMessageSeen(msg)) continue;
+
         const { command, args } = this._parseCommand(text);
         // Antispam (Toxic-style): per-chat rate limit. Flood (8 cmds/6s)
         // warns once, then ignores; minute cap (18 cmds/60s) ignores
@@ -427,6 +459,43 @@ class LegeztBot {
     } catch (_) {
       // Archiving must never crash the message handler.
     }
+  }
+
+  // Spam fix (Phase 4): is this message new enough to answer? A message
+  // is fresh when its Baileys timestamp (seconds) is at or after this
+  // connection's start, minus FRESHNESS_GRACE_MS for clock skew and for a
+  // message sent a breath before the socket opened. Messages without a
+  // readable timestamp, and messages arriving before any connection has
+  // opened, are treated as fresh — a live command must never be silently
+  // dropped just because its timestamp is missing. Only the command path
+  // calls this; the relay path (respond) never touches it.
+  _isFreshMessage(msg) {
+    if (this._connectedAt === null || this._connectedAt === undefined) return true;
+    const raw = msg && msg.messageTimestamp;
+    let secs = NaN;
+    if (typeof raw === 'number') secs = raw;
+    else if (typeof raw === 'string') secs = Number(raw);
+    else if (raw && typeof raw.toNumber === 'function') {
+      try { secs = raw.toNumber(); } catch (_) { secs = NaN; }
+    }
+    if (!Number.isFinite(secs) || secs <= 0) return true;
+    return secs * 1000 >= this._connectedAt - FRESHNESS_GRACE_MS;
+  }
+
+  // Spam fix (Phase 4): record a message ID as answered. Returns false
+  // when the ID was already answered (the caller must skip the message
+  // entirely), true otherwise. The set is bounded (FIFO eviction) so a
+  // long-lived process never grows it without a cap. Messages without a
+  // usable ID are always treated as new.
+  _noteMessageSeen(msg) {
+    const id = msg && msg.key && typeof msg.key.id === 'string' ? msg.key.id : null;
+    if (id === null || id === '') return true;
+    if (this._seenMessageIds.has(id)) return false;
+    this._seenMessageIds.add(id);
+    while (this._seenMessageIds.size > MAX_SEEN_MESSAGE_IDS) {
+      this._seenMessageIds.delete(this._seenMessageIds.keys().next().value);
+    }
+    return true;
   }
 
   // SPEC 14 (gap tolerance): normalise the command before lookup, on
