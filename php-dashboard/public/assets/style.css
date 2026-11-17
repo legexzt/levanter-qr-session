@@ -460,6 +460,35 @@ input::placeholder {
   border-radius: 8px;
 }
 
+.pairing-block {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.pairing-label {
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.pairing-code {
+  margin: 0 0 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+.pairing-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pairing-note {
+  margin-top: 12px;
+}
+
 .spinner {
   display: inline-block;
   width: 28px;
