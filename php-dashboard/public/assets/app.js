@@ -215,5 +215,17 @@
                 }
             });
         });
+
+        // Ops controls (Restart / Pause / Disconnect) confirm with the
+        // message on the form's data-confirm attribute.
+        document.querySelectorAll('form.confirm-action').forEach((form) => {
+            form.addEventListener('submit', (event) => {
+                const message = form.dataset.confirm || 'Are you sure?';
+
+                if (!window.confirm(message)) {
+                    event.preventDefault();
+                }
+            });
+        });
     });
 })();

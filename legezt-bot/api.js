@@ -1,10 +1,12 @@
 // Provides the LEGEZT bot's localhost HTTP API for the PHP dashboard and curl tests.
 // server.js passes in a LegeztBot instance from bot.js and handles app.listen().
-// Requires express, fs, the bot instance, and a relay key from its file or environment.
+// Requires express, fs, ops-api.js (Ops endpoints), the bot instance, and a
+// relay key from its file or environment.
 'use strict';
 
 const express = require('express');
 const fs = require('fs');
+const { registerOpsRoutes } = require('./ops-api.js');
 
 function isLocalhost(req) {
   const address = req.socket && req.socket.remoteAddress;
@@ -245,6 +247,10 @@ function createApi(bot, opts) {
       return res.status(500).json({ ok: false, error: 'internal' });
     }
   });
+
+  // Ops dashboard endpoints (GET /api/ops, POST /api/restart,
+  // POST /api/vault/download) — localhost-only + relay key.
+  registerOpsRoutes(app, { bot, log, requireLocalApiKey, reportError });
 
   app.use((req, res) => {
     return res.status(404).json({ ok: false, error: 'not-found' });

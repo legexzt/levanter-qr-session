@@ -8,7 +8,8 @@
 // - Memory: aggregates in Maps so the dashboard reads O(1) without scanning
 //   the file — byCommand (bounded by the distinct command count, ~20),
 //   byType (3 types), byDay (capped to the last 30 days, older days pruned).
-//   Aggregates are in-memory only and reset on restart; the JSONL is the
+//   Aggregates are rebuilt from the JSONL once at startup (loadFromDisk),
+//   so a bot restart does not zero the dashboard; the JSONL stays the
 //   durable source of truth.
 'use strict';
 
@@ -29,7 +30,7 @@ function dayKey(isoTime) {
 }
 
 function emptyAggregate() {
-  return { count: 0, ok: 0, fail: 0, tokens: 0, totalMs: 0 };
+  return { count: 0, ok: 0, fail: 0, tokens: 0, inputTokens: 0, outputTokens: 0, totalMs: 0 };
 }
 
 function bump(map, key, line) {
@@ -42,6 +43,8 @@ function bump(map, key, line) {
   if (line.ok) entry.ok += 1;
   else entry.fail += 1;
   if (typeof line.tokens === 'number') entry.tokens += line.tokens;
+  if (typeof line.inputTokens === 'number') entry.inputTokens += line.inputTokens;
+  if (typeof line.outputTokens === 'number') entry.outputTokens += line.outputTokens;
   if (typeof line.durationMs === 'number') entry.totalMs += line.durationMs;
   return entry;
 }
@@ -60,8 +63,58 @@ function recordAggregate(line) {
   }
 }
 
+// Startup replay: the JSONL file is the durable source of truth, so the
+// in-memory aggregates are rebuilt from it once — otherwise a bot restart
+// would zero the dashboard until new events arrived. The replay is bounded
+// to the file as it existed at module load (same inode, up to its load-time
+// size): anything appended afterwards was already aggregated by logUsage(),
+// and a rotated file is skipped (its events are all post-rotation, hence
+// already counted). Only the last 2 MB are replayed to bound startup cost.
+let diskReplayDone = false;
+let diskReplayInode = null;
+let diskReplaySize = 0;
+
+try {
+  const st = fs.statSync(USAGE_FILE);
+  if (st.isFile()) {
+    diskReplayInode = st.ino;
+    diskReplaySize = st.size;
+  }
+} catch (_) {
+  // Missing file is normal on a fresh install.
+}
+
+function loadFromDisk() {
+  if (diskReplayDone) return;
+  diskReplayDone = true;
+  if (diskReplayInode === null || diskReplaySize === 0) return;
+  try {
+    const st = fs.statSync(USAGE_FILE);
+    if (!st.isFile() || st.ino !== diskReplayInode) return;
+    const end = Math.min(st.size, diskReplaySize);
+    const start = Math.max(0, end - 2 * 1024 * 1024);
+    const fd = fs.openSync(USAGE_FILE, 'r');
+    const buf = Buffer.alloc(end - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    fs.closeSync(fd);
+    for (const line of buf.toString('utf8').split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === 'object') recordAggregate(parsed);
+      } catch (_) {
+        // A partial first line (cut by the tail) is skipped.
+      }
+    }
+  } catch (_) {
+    // A failed replay leaves the aggregates empty; new events still count.
+  }
+}
+
 // Snapshot of the in-memory aggregates for the dashboard. O(1) — no disk scan.
 function getStats() {
+  loadFromDisk();
   const snapshot = (map) => {
     const out = {};
     for (const [key, value] of map) out[key] = { ...value };
@@ -126,4 +179,35 @@ function logUsage(event) {
   }
 }
 
-module.exports = { logUsage, hashChat, getStats };
+// Reads the newest usage events from the JSONL file, newest first.
+// Tails the last 128 KB so a huge log is never fully read. Never throws;
+// returns [] when the file is missing or unreadable.
+function readRecent(limit) {
+  const n = Math.max(1, Math.min(50, Number(limit) || 20));
+  try {
+    const stat = fs.statSync(USAGE_FILE);
+    if (!stat.isFile() || stat.size === 0) return [];
+    const start = Math.max(0, stat.size - 131072);
+    const fd = fs.openSync(USAGE_FILE, 'r');
+    const buf = Buffer.alloc(stat.size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    fs.closeSync(fd);
+    const lines = buf.toString('utf8').split('\n');
+    const out = [];
+    for (let i = lines.length - 1; i >= 0 && out.length < n; i--) {
+      const trimmed = lines[i].trim();
+      if (!trimmed) continue;
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === 'object') out.push(parsed);
+      } catch (_) {
+        // A partial first line (cut by the tail) is skipped.
+      }
+    }
+    return out;
+  } catch (_) {
+    return [];
+  }
+}
+
+module.exports = { logUsage, hashChat, getStats, readRecent };

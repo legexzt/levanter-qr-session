@@ -11,6 +11,7 @@ $navigation = [
     'media' => ['glyph' => '▤', 'label' => 'Media'],
     'plugins' => ['glyph' => '⚙', 'label' => 'Plugins'],
     'listener' => ['glyph' => '◉', 'label' => 'Listener'],
+    'ops' => ['glyph' => '▧', 'label' => 'Ops'],
     'settings' => ['glyph' => '⛭', 'label' => 'Settings'],
 ];
 ?>

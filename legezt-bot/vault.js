@@ -141,4 +141,29 @@ function readByHash(hash) {
   return readFromVault(entry.name);
 }
 
-module.exports = { saveToVault, readFromVault, findByHash, readByHash, hashBuffer };
+// Lists every vault entry from the index (newest first). O(index size) —
+// no directory scan. Returns [] when the index is missing or unreadable.
+function listVault() {
+  try {
+    const idx = loadIndex();
+    const out = [];
+    for (const [hash, entry] of idx) {
+      if (!entry || typeof entry.name !== 'string') continue;
+      out.push({
+        hash,
+        name: entry.name,
+        size: typeof entry.size === 'number' ? entry.size : null,
+        storedAt: typeof entry.storedAt === 'string' ? entry.storedAt : null,
+        originalName: typeof entry.originalName === 'string' && entry.originalName !== ''
+          ? entry.originalName
+          : entry.name
+      });
+    }
+    out.sort((a, b) => String(b.storedAt || '').localeCompare(String(a.storedAt || '')));
+    return out;
+  } catch (_) {
+    return [];
+  }
+}
+
+module.exports = { saveToVault, readFromVault, findByHash, readByHash, hashBuffer, listVault };

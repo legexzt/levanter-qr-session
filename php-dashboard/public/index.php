@@ -9,6 +9,8 @@ require_once __DIR__ . '/../lib/db.php';
 require_once __DIR__ . '/../lib/security.php';
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/qr.php';
+require_once __DIR__ . '/../lib/ops.php';
+require_once __DIR__ . '/../lib/ops-actions.php';
 
 block_bad_user_agents();
 send_security_headers();
@@ -224,6 +226,8 @@ if ($action === 'pairing-code' && $requestMethod === 'POST') {
     json_response($result);
 }
 
+handle_ops_actions($action, $requestMethod);
+
 if ($action === 'login' && $requestMethod === 'POST') {
     $passcode = isset($_POST['passcode']) && is_string($_POST['passcode'])
         ? $_POST['passcode']
@@ -291,6 +295,7 @@ $allowedPages = [
     'media',
     'plugins',
     'listener',
+    'ops',
     'settings',
 ];
 
@@ -309,6 +314,7 @@ $titles = [
     'media' => 'Media & Storage',
     'plugins' => 'Plugins',
     'listener' => 'Listener & Learning',
+    'ops' => 'Ops & Terminal',
     'settings' => 'Settings',
 ];
 
