@@ -137,3 +137,24 @@ reaction + command normalisation.
 - Pre-existing notes carried over: `.song` / `.video` downloads are
   best-effort (play-dl unverified on EC2, link fallback); Pause and
   Disconnect share the same `pause()` mechanism.
+
+## Menu template (owner design, 17 Nov 2026)
+
+The owner sent his exact `.menu` / `.help` design (box-drawing banner,
+six category boxes, QUICK START box, footer) and asked for it verbatim —
+the Phase 3 grouped menu was not what he wanted, so it was replaced.
+- New `legezt-bot/lib/menu-template.js`: the owner's template as the
+  canonical menu. Commands are rendered from the plugins Map grouped by
+  the same 6 categories, in the owner's order, with the owner's
+  descriptions as canonical (a future plugin falls back to its own
+  description; an uncategorised command goes to SYSTEM & BOT CONTROL).
+  The banner is reproduced exactly as he wrote it, including the SMART
+  line having no closing ║ — it was not "fixed".
+- `legezt-bot/plugins/help.js` now renders via `renderMenu()`; `.menu`
+  (delegating to help) shows the identical output.
+- Test: `/tmp/kimi/test_phase3.js` asserts `.menu` and `.help` output
+  EXACTLY matches the owner's template (full-string comparison, 105
+  lines) — 27/27 passed, and the other suites stayed green (plugins
+  48/48, usage/vault 37/37, reconnect 19/19, liveness 14/14).
+- Nothing else changed: no dashboard rebuild, no bot.js logic change,
+  gap tolerance and the ⏳/✅ loading reaction still work.
