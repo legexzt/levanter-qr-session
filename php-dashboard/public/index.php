@@ -202,6 +202,28 @@ if ($action === 'reconnect' && $requestMethod === 'POST') {
     json_response($result);
 }
 
+if ($action === 'pairing-code' && $requestMethod === 'POST') {
+    if (!is_logged_in()) {
+        json_response(['error' => 'unauthenticated'], 401);
+    }
+
+    $csrf = isset($_POST['csrf']) && is_string($_POST['csrf'])
+        ? $_POST['csrf']
+        : null;
+
+    if (!verify_csrf($csrf)) {
+        json_response(['error' => 'invalid-csrf'], 403);
+    }
+
+    $result = qr_pairing_code();
+
+    if ($result === null) {
+        json_response(['error' => 'pairing-code-unavailable'], 502);
+    }
+
+    json_response($result);
+}
+
 if ($action === 'login' && $requestMethod === 'POST') {
     $passcode = isset($_POST['passcode']) && is_string($_POST['passcode'])
         ? $_POST['passcode']
