@@ -19,6 +19,7 @@ const { check: checkRateLimit, prune: pruneRateLimit } = require('./lib/ratelimi
 const { decideReconnect, FALSE_LOGOUT_WINDOW_MS, MAX_CONSECUTIVE_BAD_SESSION } = require('./lib/reconnect.js');
 const { logUsage } = require('./usage.js');
 const { autoSaveMedia } = require('./lib/media.js');
+const { archive, extractMessage, noteChatName, getChatDisplayName, isGroupJid } = require('./lib/chats.js');
 const { errorCard } = require('./lib/format.js');
 
 class LegeztBot {
@@ -333,10 +334,15 @@ class LegeztBot {
         // Media auto-save to the vault (SPEC 12): any incoming document,
         // image, audio/voice note, or video is archived encrypted. It runs
         // for every media message, not just commands, and never blocks
-        // command handling or crashes the bot.
-        autoSaveMedia(msg, from, (level, text) => this.log(level, text)).catch((err) => {
-          this.log('error', 'Media auto-save failed: ' + (err && err.message ? String(err.message).slice(0, 200) : 'unknown error'));
-        });
+        // command handling or crashes the bot. Once the media is saved, the
+        // message itself is archived to the training store (SPEC 6 chats/,
+        // Phase 4) with the vault hash, so the archive line can join the
+        // message to its file. Both steps are fire-and-forget.
+        autoSaveMedia(msg, from, (level, text) => this.log(level, text))
+          .then((media) => { this._archiveIncoming(msg, from, media); })
+          .catch((err) => {
+            this.log('error', 'Media auto-save failed: ' + (err && err.message ? String(err.message).slice(0, 200) : 'unknown error'));
+          });
         if (!text.startsWith('.')) continue;
 
         const { command, args } = this._parseCommand(text);
@@ -398,6 +404,31 @@ class LegeztBot {
     }
   }
 
+  // Phase 4: archive one incoming message to the training store
+  // (lib/chats.js). Fire-and-forget — a failed archive is logged once and
+  // never blocks the command path. Display names are best-effort: a group's
+  // subject comes from groupMetadata (cached in chats.js), a 1:1 chat's name
+  // from the sender's pushName (never the owner's own name on fromMe).
+  _archiveIncoming(msg, from, media) {
+    try {
+      const entry = extractMessage(msg, {
+        from,
+        accountJid: this.account,
+        media: media || null
+      });
+      if (entry) archive(entry);
+      if (isGroupJid(from)) {
+        getChatDisplayName(from, this.sock)
+          .then((name) => { if (name) noteChatName(from, name, true); })
+          .catch(() => {});
+      } else if (!msg.key?.fromMe && typeof msg.pushName === 'string' && msg.pushName.trim() !== '') {
+        noteChatName(from, msg.pushName, false);
+      }
+    } catch (_) {
+      // Archiving must never crash the message handler.
+    }
+  }
+
   // SPEC 14 (gap tolerance): normalise the command before lookup, on
   // both the WhatsApp path and the relay path. Trim, collapse runs of
   // spaces, and allow a space between '.' and the command name, so
@@ -435,9 +466,25 @@ class LegeztBot {
   async _sendText(jid, text) {
     try {
       if (!this.sock) throw new Error('socket is not connected');
-      await this.sock.sendMessage(jid, { text });
+      const sent = await this.sock.sendMessage(jid, { text });
       // P0 (F-06): a successful send proves the socket is alive.
       this._lastActivityAt = Date.now();
+      // Phase 4: the bot's own reply is the "out" side of the conversation
+      // — archive it so the thread is complete. The sent message id dedups
+      // against the same message if it also arrives via upsert.
+      try {
+        archive({
+          ts: new Date().toISOString(),
+          id: sent && sent.key && typeof sent.key.id === 'string' ? sent.key.id : null,
+          chat: jid,
+          sender: this.account || 'me',
+          senderName: 'LEGEZT',
+          direction: 'out',
+          type: 'text',
+          text: String(text),
+          media: null
+        });
+      } catch (_) {}
       return true;
     } catch (err) {
       this._fail(`Failed to send text to ${jid}`, err);

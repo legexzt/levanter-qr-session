@@ -249,7 +249,9 @@ function createApi(bot, opts) {
   });
 
   // Ops dashboard endpoints (GET /api/ops, POST /api/restart,
-  // POST /api/vault/download) — localhost-only + relay key.
+  // POST /api/vault/download) and Chats endpoints (GET /api/chats,
+  // GET /api/chats/:jid/messages, GET /api/chats/export,
+  // GET /api/chats/:jid/export) — localhost-only + relay key.
   registerOpsRoutes(app, { bot, log, requireLocalApiKey, reportError });
 
   app.use((req, res) => {

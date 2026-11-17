@@ -114,9 +114,10 @@ fi
 
 # Storage dirs for usage logs + the encrypted vault (mode 700, owner ubuntu).
 # usage.jsonl lives in $LEGEZT_DIR/storage/; vault files in storage/vault/.
-sudo mkdir -p "$LEGEZT_DIR/storage/vault"
-sudo chown ubuntu:ubuntu "$LEGEZT_DIR/storage" "$LEGEZT_DIR/storage/vault"
-sudo chmod 0700 "$LEGEZT_DIR/storage" "$LEGEZT_DIR/storage/vault"
+# Phase 4: chat message archives (training store, JSONL) in storage/chats/.
+sudo mkdir -p "$LEGEZT_DIR/storage/vault" "$LEGEZT_DIR/storage/chats"
+sudo chown ubuntu:ubuntu "$LEGEZT_DIR/storage" "$LEGEZT_DIR/storage/vault" "$LEGEZT_DIR/storage/chats"
+sudo chmod 0700 "$LEGEZT_DIR/storage" "$LEGEZT_DIR/storage/vault" "$LEGEZT_DIR/storage/chats"
 
 # P0 (F-05): same ecosystem start as qr-session (see above). Levanter is
 # NOT restarted here — it is the fallback and only the parent stops it.

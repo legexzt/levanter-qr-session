@@ -4,7 +4,7 @@
 'use strict';
 
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-const { saveToVault } = require('../vault.js');
+const { saveToVault, hashBuffer } = require('../vault.js');
 const { logUsage } = require('../usage.js');
 
 // Media the bot auto-saves is capped so one huge file cannot fill the server
@@ -32,7 +32,8 @@ function extensionForMimetype(mimetype, kind) {
 
 // Archives a media message (document, image, audio/voice note, video) into
 // the vault under <timestamp>_<original-filename> and logs a "media" usage
-// event. Returns silently when the message carries no such media. Never throws.
+// event. Returns { kind, vaultHash, mimetype } for the message archive, or
+// null when the message carries no such media. Never throws.
 async function autoSaveMedia(msg, from, log) {
   try {
     const inner = msg.message || {};
@@ -53,17 +54,17 @@ async function autoSaveMedia(msg, from, log) {
       kind = 'video';
       mimetype = inner.videoMessage.mimetype || null;
     } else {
-      return;
+      return null;
     }
 
     const startedAt = Date.now();
     const buffer = await downloadMediaMessage(msg, 'buffer', {});
-    if (!Buffer.isBuffer(buffer) || buffer.length === 0) return;
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) return null;
     if (buffer.length > MAX_VAULT_MEDIA_BYTES) {
       if (typeof log === 'function') {
         log('warn', `Media auto-save skipped: ${kind} too large (${buffer.length} bytes)`);
       }
-      return;
+      return null;
     }
 
     const base = fileName
@@ -79,11 +80,15 @@ async function autoSaveMedia(msg, from, log) {
       ok: true,
       file: vaultPath.split('/').pop()
     });
+    // The archive line references the media by its vault content hash, so
+    // the training store can join a message to its file without a path.
+    return { kind, vaultHash: hashBuffer(buffer), mimetype };
   } catch (err) {
     // A failed media save is logged once and never crashes the bot.
     if (typeof log === 'function') {
       log('error', 'Media auto-save failed: ' + (err && err.message ? String(err.message).slice(0, 200) : 'unknown error'));
     }
+    return null;
   }
 }
 

@@ -1383,3 +1383,149 @@ h3,
     margin-left: 0;
   }
 }
+
+/* Phase 4 — Chats page: chat list + message thread. Same dark violet-cyan
+   theme as the rest of the dashboard; two columns on desktop, stacked on
+   mobile. Outgoing bubbles use the LEGEZT gradient (logo violet -> cyan). */
+.chats-layout {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #1d2129;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.chat-item:hover {
+  border-color: var(--accent);
+}
+
+.chat-item.active {
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.12);
+}
+
+.chat-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chat-item-name {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.chat-item-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chat-item-preview {
+  color: var(--muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-thread-wrap {
+  min-width: 0;
+}
+
+.chat-thread-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.chat-thread-header h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.msg-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 78%;
+  padding: 10px 13px;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+
+.msg-bubble.in {
+  align-self: flex-start;
+  background: #1d222b;
+  border: 1px solid var(--border);
+}
+
+.msg-bubble.out {
+  align-self: flex-end;
+  background: linear-gradient(135deg, #7c5cff, #22d3ee);
+  color: #fff;
+}
+
+.msg-bubble.out a {
+  color: #fff;
+}
+
+.msg-sender {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.msg-bubble.out .msg-sender {
+  color: #fff;
+}
+
+.msg-text {
+  white-space: pre-wrap;
+}
+
+.msg-media {
+  font-size: 13px;
+}
+
+.msg-meta {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+@media (max-width: 860px) {
+  .chats-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .msg-bubble {
+    max-width: 92%;
+  }
+}

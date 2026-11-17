@@ -1,8 +1,9 @@
 // Registers the Ops dashboard endpoints on the legezt-bot HTTP API.
 // Called by api.js inside createApi(); the route handlers get the bot, log,
 // requireLocalApiKey, and reportError helpers through ctx.
-// Requires fs, os, path, child_process, usage.js, vault.js. Localhost-only +
-// relay key on every route; the vault key never leaves this process.
+// Requires fs, os, path, child_process, usage.js, vault.js, lib/chats.js.
+// Localhost-only + relay key on every route; the vault key never leaves
+// this process.
 'use strict';
 
 const fs = require('fs');
@@ -11,6 +12,7 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { getStats, readRecent } = require('./usage.js');
 const { listVault, readByHash } = require('./vault.js');
+const { listChats, readMessages, markRead, exportFiles, isValidJid } = require('./lib/chats.js');
 
 // Ops helpers. Every helper is best-effort: a failing part returns null/[]
 // and never takes down the endpoint.
@@ -78,6 +80,43 @@ const VAULT_MIME = {
   zip: 'application/zip', txt: 'text/plain',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 };
+
+// A training export is capped so one download can never exhaust the
+// server's memory or the dashboard's temp file. The size is checked
+// BEFORE streaming starts, so a too-large export fails cleanly.
+const MAX_EXPORT_BYTES = 500 * 1024 * 1024;
+
+// Streams day-files one after another into the response (each file is
+// already chronological JSONL). A file that cannot be read is skipped;
+// the client disconnect ends the stream. Never throws.
+function streamExportFiles(res, files, filename) {
+  return new Promise((resolve) => {
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    let index = 0;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      try { res.end(); } catch (_) {}
+      resolve();
+    };
+    res.on('close', () => {
+      finished = true;
+      resolve();
+    });
+    const next = () => {
+      if (finished) return;
+      if (index >= files.length) return finish();
+      const file = files[index++].file;
+      const stream = fs.createReadStream(file);
+      stream.on('error', next);
+      stream.on('end', next);
+      stream.pipe(res, { end: false });
+    };
+    next();
+  });
+}
 
 function vaultExt(name) {
   return String(name || '').split('.').pop().toLowerCase();
@@ -170,6 +209,119 @@ function registerOpsRoutes(app, ctx) {
     } catch (err) {
       reportError('GET /api/ops failed', err);
       return res.status(500).json({ ok: false, error: 'internal' });
+    }
+  });
+
+  // Phase 4 — Chats: the training store's list, thread, and export.
+  // Every route is localhost-only + relay key, like /api/ops.
+  app.get('/api/chats', (req, res) => {
+    try {
+      if (!requireLocalApiKey(req, res)) {
+        return;
+      }
+
+      const chats = listChats();
+      return res.json({ ok: true, chats, total: chats.length });
+    } catch (err) {
+      reportError('GET /api/chats failed', err);
+      return res.status(500).json({ ok: false, error: 'internal' });
+    }
+  });
+
+  // Full training export: every archived message, one JSON line each,
+  // grouped by chat (each line carries its chat JID). Registered BEFORE
+  // the :jid routes so "export" is never mistaken for a chat JID.
+  app.get('/api/chats/export', async (req, res) => {
+    try {
+      if (!requireLocalApiKey(req, res)) {
+        return;
+      }
+
+      const files = exportFiles(null);
+      const total = files.reduce((sum, f) => sum + f.bytes, 0);
+      if (total > MAX_EXPORT_BYTES) {
+        return res.status(413).json({ ok: false, error: 'export-too-large' });
+      }
+
+      const stamp = new Date().toISOString().slice(0, 10);
+      await streamExportFiles(res, files, `legezt-chats-${stamp}.jsonl`);
+    } catch (err) {
+      reportError('GET /api/chats/export failed', err);
+      if (!res.headersSent) {
+        return res.status(500).json({ ok: false, error: 'internal' });
+      }
+    }
+  });
+
+  // One chat's messages, oldest first in the page. `before` is an ISO
+  // cursor (only messages older than it are returned); `markRead=1`
+  // clears the chat's unread count.
+  app.get('/api/chats/:jid/messages', (req, res) => {
+    try {
+      if (!requireLocalApiKey(req, res)) {
+        return;
+      }
+
+      const jid = req.params.jid;
+      if (!isValidJid(jid)) {
+        return res.status(400).json({ ok: false, error: 'invalid-jid' });
+      }
+
+      const before = typeof req.query.before === 'string' && req.query.before !== ''
+        ? req.query.before
+        : null;
+      if (before !== null && Number.isNaN(Date.parse(before))) {
+        return res.status(400).json({ ok: false, error: 'invalid-before' });
+      }
+
+      const page = readMessages(jid, { limit: req.query.limit, before });
+      if (req.query.markRead === '1') markRead(jid);
+      const chat = listChats().find((c) => c.jid === jid) || {
+        jid,
+        name: null,
+        number: null,
+        isGroup: jid.endsWith('@g.us'),
+        unread: 0
+      };
+      return res.json({
+        ok: true,
+        chat,
+        messages: page.messages,
+        hasMore: page.hasMore,
+        oldestTs: page.oldestTs
+      });
+    } catch (err) {
+      reportError('GET /api/chats/:jid/messages failed', err);
+      return res.status(500).json({ ok: false, error: 'internal' });
+    }
+  });
+
+  // Per-chat training export: that chat's day files, oldest first.
+  app.get('/api/chats/:jid/export', async (req, res) => {
+    try {
+      if (!requireLocalApiKey(req, res)) {
+        return;
+      }
+
+      const jid = req.params.jid;
+      if (!isValidJid(jid)) {
+        return res.status(400).json({ ok: false, error: 'invalid-jid' });
+      }
+
+      const files = exportFiles(jid);
+      const total = files.reduce((sum, f) => sum + f.bytes, 0);
+      if (total > MAX_EXPORT_BYTES) {
+        return res.status(413).json({ ok: false, error: 'export-too-large' });
+      }
+
+      const stamp = new Date().toISOString().slice(0, 10);
+      const safe = jid.replace(/[^A-Za-z0-9]/g, '_').slice(0, 60);
+      await streamExportFiles(res, files, `legezt-chat-${safe}-${stamp}.jsonl`);
+    } catch (err) {
+      reportError('GET /api/chats/:jid/export failed', err);
+      if (!res.headersSent) {
+        return res.status(500).json({ ok: false, error: 'internal' });
+      }
     }
   });
 

@@ -12,6 +12,7 @@ require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/qr.php';
 require_once __DIR__ . '/ops.php';
+require_once __DIR__ . '/chats.php';
 
 function ops_control_csrf(): ?string
 {
@@ -118,6 +119,35 @@ function handle_ops_actions(string $action, string $requestMethod): void
 
         if (!ops_vault_download($hash)) {
             dashboard_redirect('index.php?page=ops&notice=download-failed');
+        }
+
+        exit;
+    }
+
+    // Chats JSONL export (Phase 4, training store): downloads the whole
+    // archive, or one chat's messages when ?chat=<jid> is given. Same
+    // CSRF + audit pattern as the vault download; only the JID (never
+    // message text) is logged.
+    if ($action === 'chats-export' && $requestMethod === 'GET') {
+        if (!is_logged_in()) {
+            dashboard_redirect('index.php?error=1');
+        }
+
+        $csrf = isset($_GET['csrf']) && is_string($_GET['csrf'])
+            ? $_GET['csrf']
+            : null;
+        $jid = isset($_GET['chat']) && is_string($_GET['chat']) && $_GET['chat'] !== ''
+            ? $_GET['chat']
+            : null;
+
+        if (!verify_csrf($csrf) || ($jid !== null && !chats_valid_jid($jid))) {
+            dashboard_redirect('index.php?page=chats&notice=download-failed');
+        }
+
+        db_log('chats_export', $jid ?? 'all');
+
+        if (!chats_export_download($jid)) {
+            dashboard_redirect('index.php?page=chats&notice=download-failed');
         }
 
         exit;
