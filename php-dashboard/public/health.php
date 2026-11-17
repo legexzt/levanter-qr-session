@@ -20,6 +20,7 @@ $response = [
     'ok' => true,
     'whatsapp' => 'unavailable',
     'levanterUp' => null,
+    'botUp' => null,
     'storage_used_mb' => 0,
     'uptime' => null,
 ];
@@ -157,14 +158,18 @@ try {
                 $response['whatsapp'] = trim($status);
             }
 
-            $up = $source['levanterUp'] ?? null;
+            // Phase 2: legezt-bot reports botUp; fall back to the old levanterUp field.
+            $up = $source['botUp'] ?? $source['levanterUp'] ?? null;
 
             if (is_bool($up)) {
                 $response['levanterUp'] = $up;
+                $response['botUp'] = $up;
             } elseif ($up === 1 || $up === '1') {
                 $response['levanterUp'] = true;
+                $response['botUp'] = true;
             } elseif ($up === 0 || $up === '0') {
                 $response['levanterUp'] = false;
+                $response['botUp'] = false;
             }
         }
     }
