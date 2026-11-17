@@ -6,9 +6,14 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config.php';
 
-function qr_request(string $path, bool $post): ?array
+function qr_request(string $path, bool $post, array $headers = [], ?int &$httpCode = null): ?array
 {
     $url = QR_BASE_URL . $path;
+    $statusRequested = func_num_args() >= 4;
+    $httpCode = null;
+    $requestHeaders = $post
+        ? array_merge(['Content-Type: application/json'], $headers)
+        : $headers;
 
     if (function_exists('curl_init')) {
         $handle = curl_init();
@@ -27,7 +32,10 @@ function qr_request(string $path, bool $post): ?array
         if ($post) {
             $options[CURLOPT_POST] = true;
             $options[CURLOPT_POSTFIELDS] = '{}';
-            $options[CURLOPT_HTTPHEADER] = ['Content-Type: application/json'];
+        }
+
+        if ($requestHeaders !== []) {
+            $options[CURLOPT_HTTPHEADER] = $requestHeaders;
         }
 
         if (!curl_setopt_array($handle, $options)) {
@@ -39,7 +47,11 @@ function qr_request(string $path, bool $post): ?array
         $httpCode = (int) curl_getinfo($handle, CURLINFO_HTTP_CODE);
         curl_close($handle);
 
-        if ($response === false || $httpCode !== 200) {
+        if ($response === false) {
+            return null;
+        }
+
+        if (!$statusRequested && $httpCode !== 200) {
             return null;
         }
     } else {
@@ -50,16 +62,15 @@ function qr_request(string $path, bool $post): ?array
         ];
 
         if ($post) {
-            $http['header'] = "Content-Type: application/json\r\n";
             $http['content'] = '{}';
+        }
+
+        if ($requestHeaders !== []) {
+            $http['header'] = implode("\r\n", $requestHeaders) . "\r\n";
         }
 
         $context = stream_context_create(['http' => $http]);
         $response = @file_get_contents($url, false, $context);
-
-        if ($response === false) {
-            return null;
-        }
 
         $httpCode = 0;
         foreach ($http_response_header ?? [] as $header) {
@@ -68,7 +79,11 @@ function qr_request(string $path, bool $post): ?array
             }
         }
 
-        if ($httpCode !== 200) {
+        if ($response === false) {
+            return null;
+        }
+
+        if (!$statusRequested && $httpCode !== 200) {
             return null;
         }
     }
@@ -110,4 +125,46 @@ function qr_disconnect(): ?array
 function qr_connect(): ?array
 {
     return qr_post('/api/connect');
+}
+
+function qr_relay_key(): ?string
+{
+    $path = CONFIG_DIR . '/relay.key';
+
+    if (!is_file($path) || !is_readable($path)) {
+        return null;
+    }
+
+    $key = @file_get_contents($path);
+
+    if ($key === false) {
+        return null;
+    }
+
+    $key = trim($key);
+
+    return $key === '' ? null : $key;
+}
+
+function qr_pairing_code(): ?array
+{
+    $key = qr_relay_key();
+
+    if ($key === null) {
+        return null;
+    }
+
+    $httpCode = null;
+    $result = qr_request(
+        '/api/pairing-code',
+        true,
+        ['X-Api-Key: ' . $key],
+        $httpCode
+    );
+
+    if ($result === null) {
+        return null;
+    }
+
+    return $result;
 }
