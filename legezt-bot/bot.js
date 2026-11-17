@@ -218,7 +218,11 @@ class LegeztBot {
     try {
       if (type !== 'notify' || (sock && this.sock !== sock)) return;
       for (const msg of messages || []) {
-        if (!msg?.message || msg.key?.fromMe) continue;
+        // fromMe messages are the owner's own messages sent from their phone
+        // (the linked account) — the owner triggers commands from their own
+        // phone, so they must be processed. The '.' prefix check below
+        // prevents reply loops: the bot never sends '.'-prefixed messages.
+        if (!msg?.message) continue;
         const text = [
           msg.message.conversation,
           msg.message.extendedTextMessage?.text,
