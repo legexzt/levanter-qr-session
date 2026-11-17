@@ -24,4 +24,4 @@ jobs:
               git clone https://github.com/legexzt/levanter-qr-session.git /home/ubuntu/levanter-qr-session
               cd /home/ubuntu/levanter-qr-session
             fi
-            bash deploy.sh
+            BEDROCK_API_KEY='${{ secrets.BEDROCK_API_KEY }}' bash deploy.sh
