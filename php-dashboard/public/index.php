@@ -178,6 +178,30 @@ if ($action === 'disconnect' && $requestMethod === 'POST') {
     json_response($result);
 }
 
+if ($action === 'reconnect' && $requestMethod === 'POST') {
+    if (!is_logged_in()) {
+        json_response(['error' => 'unauthenticated'], 401);
+    }
+
+    $csrf = isset($_POST['csrf']) && is_string($_POST['csrf'])
+        ? $_POST['csrf']
+        : null;
+
+    if (!verify_csrf($csrf)) {
+        json_response(['error' => 'invalid-csrf'], 403);
+    }
+
+    // Phase 2: resumes legezt-bot after a manual disconnect (auth files kept).
+    $result = qr_api('POST', '/api/connect');
+    db_log('reconnect');
+
+    if ($result === null) {
+        json_response(['error' => 'qr-service-unavailable'], 502);
+    }
+
+    json_response($result);
+}
+
 if ($action === 'login' && $requestMethod === 'POST') {
     $passcode = isset($_POST['passcode']) && is_string($_POST['passcode'])
         ? $_POST['passcode']
