@@ -71,9 +71,18 @@ Deploy:
 - Loader: a broken plugin (bad export) and a crashing plugin (throw on
   load) are both skipped with a log line; `.help` + `.ping` still load.
 
-## Live deploy verification (EC2, after push)
+## Live deploy verification (EC2, after push — 17 Nov ~10:30 IST, curl from the VM)
 
-- (to be filled after the push + curl checks)
+- Dashboard root `http://16.4.24.87/` → **http=200**, login page shows the
+  Passcode + Sign in form (passcode gate intact).
+- Dashboard `/health` → `{"ok":true,"whatsapp":"waiting","levanterUp":true,"botUp":true,"storage_used_mb":0.02,"uptime":44289}`.
+  `botUp:true` proves legezt-bot is running; `whatsapp:"waiting"` proves the
+  dashboard is now proxying legezt-bot (not qr-session) and the bot has
+  issued a QR (status only becomes `waiting` when a QR is emitted).
+- qr-session fallback still up: `{"ok":true,"levanterUp":true,"status":"unknown",...}`.
+- Levanter (port 3000) untouched and still running.
+- NOT yet verified live: the QR image on the Connect page, the owner scanning
+  it, and `.ping` replying on WhatsApp (needs the owner + a browser session).
 
 ## Still open
 
