@@ -38,6 +38,9 @@ const reactions = [];
 const texts = [];
 let sentSeq = 0;
 const fakeSock = {
+  // The outbound queue (Phase 4) only sends while the socket is connected
+  // and open, so the fake socket must look open and the bot "connected".
+  ws: { isOpen: true, readyState: 1 },
   sendMessage: async (jid, payload) => {
     if (payload && payload.react) {
       reactions.push({ jid, emoji: payload.react.text, keyId: payload.react.key && payload.react.key.id });
@@ -94,6 +97,7 @@ function readArchived(jid) {
   const bot = new LegeztBot({ authDir: path.join(TMP, 'auth'), log: () => {} });
   bot.plugins = new Map([['.ping', pingPlugin], ['ping', pingPlugin]]);
   bot.sock = fakeSock;
+  bot.status = 'connected'; // outbound queue only sends while connected
   // Simulate a connection that opened right now.
   const connectedAt = Date.now();
   bot._connectedAt = connectedAt;

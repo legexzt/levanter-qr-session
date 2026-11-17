@@ -19,6 +19,7 @@ const { check: checkRateLimit, prune: pruneRateLimit } = require('./lib/ratelimi
 const { decideReconnect, FALSE_LOGOUT_WINDOW_MS, MAX_CONSECUTIVE_BAD_SESSION } = require('./lib/reconnect.js');
 const { logUsage } = require('./usage.js');
 const { autoSaveMedia } = require('./lib/media.js');
+const { OutboundQueue } = require('./lib/outbound.js');
 const { archive, extractMessage, noteChatName, getChatDisplayName, isGroupJid } = require('./lib/chats.js');
 const { errorCard } = require('./lib/format.js');
 
@@ -79,6 +80,36 @@ class LegeztBot {
     // process (bounded, FIFO eviction — see _noteMessageSeen).
     this._connectedAt = null;
     this._seenMessageIds = new Set();
+    // Phase 4 (outbound queue): every WhatsApp send goes through one
+    // sequential, paced per-chat queue (SPEC 13 dispatcher lanes) — one
+    // message at a time per chat, 400 ms between sends, never a
+    // simultaneous blast. The queue sends only while the socket is
+    // connected and open; on reconnect it drops stale (>15 s) items and
+    // resumes the rest.
+    this._outbound = new OutboundQueue({
+      send: (jid, item) => this._rawSend(jid, item),
+      isReady: () => this._isSocketReady(),
+      log: (level, msg) => this.log(level, msg)
+    });
+    // Plugins get a socket whose sendMessage routes through the outbound
+    // queue, so media sends are ordered and paced exactly like text. A
+    // dropped media send rejects (like a failed Baileys send) so the
+    // plugin's error handling still works. Every other property forwards
+    // to the live socket.
+    this._pluginSock = new Proxy({}, {
+      get: (_target, prop) => {
+        if (prop === 'sendMessage') {
+          return (jid, payload, options) => this._outbound.enqueueMedia(jid, payload, options)
+            .then((sent) => {
+              if (sent === false) throw new Error('send dropped (socket unavailable or stale)');
+              return sent;
+            });
+        }
+        const sock = this.sock;
+        const value = sock ? sock[prop] : undefined;
+        return typeof value === 'function' ? value.bind(sock) : value;
+      }
+    });
   }
 
   async start() {
@@ -209,6 +240,9 @@ class LegeztBot {
         // gate compares every incoming message against it, so messages
         // sent before this (re)connect are never answered again.
         this._connectedAt = Date.now();
+        // Outbound queue: resume held sends (stale ones are dropped,
+        // never replayed).
+        this._outbound.onConnected();
         this.lastError = null;
         this.log('info', `Connected as ${this.account}`);
         return;
@@ -404,7 +438,7 @@ class LegeztBot {
         await this._react(from, msg.key, '⏳');
         try {
           await plugin.run({
-            sock: this.sock,
+            sock: this._pluginSock,
             message: msg,
             from,
             text,
@@ -514,13 +548,15 @@ class LegeztBot {
   }
 
   // Loading reaction (SPEC 14): react to the owner's message so he can
-  // SEE the command is loading. Best-effort — a failed reaction is
-  // logged once and never blocks the command or crashes the bot.
+  // SEE the command is loading. Reactions go through the outbound queue
+  // in order (⏳, reply, ✅/❌), each as its own paced step, exactly once
+  // per fresh command. Best-effort — a failed/dropped reaction is logged
+  // once and never blocks the command or crashes the bot.
   async _react(jid, key, emoji) {
     try {
-      if (!this.sock || !jid || !key) return false;
-      await this.sock.sendMessage(jid, { react: { text: emoji, key } });
-      return true;
+      if (!jid || !key) return false;
+      const ok = await this._outbound.enqueueReact(jid, key, emoji);
+      return ok === true;
     } catch (err) {
       const detail = err && err.message ? String(err.message).slice(0, 120) : 'unknown error';
       this.log('debug', `Reaction ${emoji} failed: ${detail}`);
@@ -532,10 +568,33 @@ class LegeztBot {
     return this.plugins.get(command) || this.plugins.get(command.replace(/^\./, '')) || null;
   }
 
+  // Text reply: enqueued on the outbound queue for its chat. The promise
+  // resolves true when the message is actually sent, false when it was
+  // dropped (stale, lane full, or send failed). It never throws to the
+  // caller — a held reply waits for the socket, bounded by the queue's
+  // staleness rule (~15 s), then resolves false.
   async _sendText(jid, text) {
+    if (!jid || text === undefined || text === null) return false;
     try {
-      if (!this.sock) throw new Error('socket is not connected');
-      const sent = await this.sock.sendMessage(jid, { text });
+      const sent = await this._outbound.enqueueText(jid, String(text));
+      return !!sent;
+    } catch (err) {
+      this._fail(`Failed to send text to ${jid}`, err);
+      return false;
+    }
+  }
+
+  // Outbound queue's actual sender: performs ONE send on the live socket.
+  // Text replies are archived here (Phase 4) so the training store records
+  // exactly what was sent, one line per message — no merging anywhere.
+  // Media is not archived (unchanged). A throw means the send failed
+  // mid-flight — the queue drops it rather than retrying, so a message is
+  // never sent twice.
+  async _rawSend(jid, item) {
+    const sock = this.sock;
+    if (!sock) throw new Error('socket is not connected');
+    if (item.kind === 'text') {
+      const sent = await sock.sendMessage(jid, { text: item.text });
       // P0 (F-06): a successful send proves the socket is alive.
       this._lastActivityAt = Date.now();
       // Phase 4: the bot's own reply is the "out" side of the conversation
@@ -550,15 +609,29 @@ class LegeztBot {
           senderName: 'LEGEZT',
           direction: 'out',
           type: 'text',
-          text: String(text),
+          text: item.text,
           media: null
         });
       } catch (_) {}
-      return true;
-    } catch (err) {
-      this._fail(`Failed to send text to ${jid}`, err);
-      return false;
+      return sent;
     }
+    if (item.kind === 'media') {
+      const sent = await sock.sendMessage(jid, item.payload, item.options);
+      this._lastActivityAt = Date.now();
+      return sent;
+    }
+    // react
+    await sock.sendMessage(jid, { react: { text: item.emoji, key: item.key } });
+    this._lastActivityAt = Date.now();
+    return true;
+  }
+
+  // Is the socket ready to send? The queue only sends while connected and
+  // the transport is open; otherwise it holds queued messages.
+  _isSocketReady() {
+    if (!this.sock || this.status !== 'connected') return false;
+    const ws = this.sock.ws;
+    return !!(ws && (ws.isOpen || ws.readyState === 1));
   }
 
   async respond(message, from) {
@@ -583,7 +656,7 @@ class LegeztBot {
     let ok = true;
     try {
       const result = await plugin.run({
-        sock: this.sock,
+        sock: this._pluginSock,
         message: null,
         from,
         text: message,
