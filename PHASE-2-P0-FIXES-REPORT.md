@@ -109,9 +109,12 @@ F-09, F-10, F-28, F-30, F-31). TLS (F-30) is investigate + report only.
   reconnect attempt.
 - **Regression suites still green**: `/tmp/kimi/test_plugins.js` **48/48**,
   `/tmp/kimi/test_usage_vault.js` **37/37** (unchanged from the plugin build).
-- **Live verification (curl from the VM, after deploy):** _to be filled in
-  after the push — dashboard 200, `/health` `botUp:true` +
-  `whatsapp:"connected"`._
+- **Live verification (curl from the VM, after deploy):** GitHub Actions
+  run **44043578075 — completed, success, 15s**. Dashboard **HTTP 200**.
+  `/health` = `{"ok":true,"whatsapp":"connected","levanterUp":true,
+  "botUp":true,"storage_used_mb":0.02,"uptime":55503}` — the bot
+  reconnected after the PM2 restart, session persisted, **no re-scan
+  needed**. Verified 17 Nov 2026 ~13:34 IST.
 
 ## EC2-side steps left (for the parent — these cannot be done from the VM)
 
