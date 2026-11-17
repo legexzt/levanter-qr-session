@@ -21,7 +21,7 @@ LEGEZT_DIR="/var/legezt"
 cd "$REPO_DIR"
 git pull --ff-only origin main
 
-# ---- Node: qr-session (unchanged) -------------------------------------------
+# ---- Node: qr-session (fallback only — Levanter's QR is no longer used) ------
 cd "$REPO_DIR/qr-session"
 npm install --no-audit --no-fund --omit=dev
 
@@ -29,6 +29,36 @@ if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
   pm2 restart "$APP_NAME" --update-env
 else
   pm2 start server.js --name "$APP_NAME"
+fi
+pm2 save
+
+# ---- Node: legezt-bot (Phase 2 — OUR OWN WhatsApp bot, port 3001) ------------
+# Own Baileys client + own QR generator. Levanter (port 3000) is NOT touched
+# and stays running as the fallback until legezt-bot links WhatsApp.
+BOT_NAME="legezt-bot"
+BOT_DIR="$REPO_DIR/legezt-bot"
+cd "$BOT_DIR"
+npm install --no-audit --no-fund --omit=dev
+
+# Auth dir for the Baileys multi-file session (outside the repo, never in Git).
+sudo mkdir -p "$LEGEZT_DIR/auth"
+sudo chown ubuntu:ubuntu "$LEGEZT_DIR/auth"
+sudo chmod 0700 "$LEGEZT_DIR/auth"
+
+# Muse-relay API key (localhost-only endpoint). Created once, never overwritten,
+# readable by the bot (ubuntu) and the PHP dashboard (www-data group).
+if [ ! -f "$LEGEZT_DIR/config/relay.key" ]; then
+  sudo mkdir -p "$LEGEZT_DIR/config"
+  openssl rand -hex 32 | sudo tee "$LEGEZT_DIR/config/relay.key" >/dev/null
+  sudo chown ubuntu:www-data "$LEGEZT_DIR/config/relay.key"
+  sudo chmod 0640 "$LEGEZT_DIR/config/relay.key"
+  echo "relay key created at $LEGEZT_DIR/config/relay.key"
+fi
+
+if pm2 describe "$BOT_NAME" >/dev/null 2>&1; then
+  pm2 restart "$BOT_NAME" --update-env
+else
+  pm2 start server.js --name "$BOT_NAME"
 fi
 pm2 save
 
@@ -89,8 +119,10 @@ fi
 
 # ---- Health checks -----------------------------------------------------------
 echo "deploy ok: $APP_NAME is $(pm2 describe "$APP_NAME" | grep -o 'status[^,]*' | head -1)"
+echo "deploy ok: $BOT_NAME is $(pm2 describe "$BOT_NAME" | grep -o 'status[^,]*' | head -1)"
 curl -s -o /dev/null -w "qr-session http=%{http_code}\n" http://localhost:8080/api/health || true
 curl -s -o /dev/null -w "levanter  http=%{http_code}\n" http://localhost:3000/ || true
+curl -s -o /dev/null -w "legezt-bot http=%{http_code}\n" http://localhost:3001/api/health || true
 curl -s -o /dev/null -w "legezt php http=%{http_code}\n" http://localhost/ || true
 curl -s http://localhost/health | head -c 300; echo
 
