@@ -68,6 +68,55 @@ if [ ! -f "$LEGEZT_DIR/config/phone.txt" ]; then
   echo "  echo -n '<digits-only number with country code>' | sudo tee $LEGEZT_DIR/config/phone.txt >/dev/null"
 fi
 
+# Plugin API keys (server config, NEVER in Git). Created empty if missing -
+# the key values are NEVER in the repo. The owner adds each key once on the
+# EC2; a plugin whose key is missing replies "X not configured yet" and
+# keeps working for everything else.
+for keyfile in bedrock.key openweather.key removebg.key; do
+  if [ ! -f "$LEGEZT_DIR/config/$keyfile" ]; then
+    sudo mkdir -p "$LEGEZT_DIR/config"
+    sudo touch "$LEGEZT_DIR/config/$keyfile"
+    sudo chown ubuntu:ubuntu "$LEGEZT_DIR/config/$keyfile"
+    sudo chmod 0600 "$LEGEZT_DIR/config/$keyfile"
+    echo "created empty $LEGEZT_DIR/config/$keyfile"
+  fi
+done
+
+# Bedrock (Kimi K3) key: if the deploy environment provides BEDROCK_API_KEY,
+# write it into bedrock.key (mode 600). The key value is NEVER echoed or
+# logged. If the variable is empty, the file stays as-is for the owner to
+# fill in once on the EC2.
+if [ -n "${BEDROCK_API_KEY:-}" ]; then
+  printf '%s' "$BEDROCK_API_KEY" | sudo tee "$LEGEZT_DIR/config/bedrock.key" >/dev/null
+  sudo chown ubuntu:ubuntu "$LEGEZT_DIR/config/bedrock.key"
+  sudo chmod 0600 "$LEGEZT_DIR/config/bedrock.key"
+  echo "bedrock key written from environment"
+else
+  echo "NOTE: Kimi key not set - add it once:"
+  echo "  echo -n '<bedrock api key>' | sudo tee $LEGEZT_DIR/config/bedrock.key >/dev/null"
+  echo "NOTE: weather key not set - add it once:"
+  echo "  echo -n '<openweathermap api key>' | sudo tee $LEGEZT_DIR/config/openweather.key >/dev/null"
+  echo "NOTE: remove.bg key not set - add it once:"
+  echo "  echo -n '<remove.bg api key>' | sudo tee $LEGEZT_DIR/config/removebg.key >/dev/null"
+fi
+
+# Secret vault key (32 random bytes, mode 600, owner ubuntu). Created once,
+# never overwritten, never logged, never in Git. The bot reads it at runtime
+# to encrypt media saved to the vault.
+if [ ! -f "$LEGEZT_DIR/config/vault.key" ]; then
+  sudo mkdir -p "$LEGEZT_DIR/config"
+  openssl rand 32 | sudo tee "$LEGEZT_DIR/config/vault.key" >/dev/null
+  sudo chown ubuntu:ubuntu "$LEGEZT_DIR/config/vault.key"
+  sudo chmod 0600 "$LEGEZT_DIR/config/vault.key"
+  echo "vault key created at $LEGEZT_DIR/config/vault.key"
+fi
+
+# Storage dirs for usage logs + the encrypted vault (mode 700, owner ubuntu).
+# usage.jsonl lives in $LEGEZT_DIR/storage/; vault files in storage/vault/.
+sudo mkdir -p "$LEGEZT_DIR/storage/vault"
+sudo chown ubuntu:ubuntu "$LEGEZT_DIR/storage" "$LEGEZT_DIR/storage/vault"
+sudo chmod 0700 "$LEGEZT_DIR/storage" "$LEGEZT_DIR/storage/vault"
+
 if pm2 describe "$BOT_NAME" >/dev/null 2>&1; then
   pm2 restart "$BOT_NAME" --update-env
 else

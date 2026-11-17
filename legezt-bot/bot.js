@@ -13,6 +13,10 @@ const {
 } = require('@whiskeysockets/baileys');
 const { loadPlugins } = require('./plugins/loader.js');
 const { PairingCode } = require('./pairing.js');
+const { suggestCommand } = require('./lib/similar.js');
+const { check: checkRateLimit, prune: pruneRateLimit } = require('./lib/ratelimit.js');
+const { logUsage } = require('./usage.js');
+const { autoSaveMedia } = require('./lib/media.js');
 
 class LegeztBot {
   constructor(opts = {}) {
@@ -68,6 +72,11 @@ class LegeztBot {
     this._watchdog = setInterval(() => {
       this._watchdogTick().catch((err) => this._fail('Watchdog failed', err));
     }, 15000);
+    // SPEC 13: prune expired antispam states every 60s so quiet chats never
+    // keep an entry forever. The Map is also hard-capped (5000 keys).
+    this._pruneTimer = setInterval(() => {
+      try { pruneRateLimit(); } catch (_) {}
+    }, 60000);
   }
 
   async _connect() {
@@ -230,16 +239,38 @@ class LegeztBot {
           msg.message.videoMessage?.caption
         ].find((value) => typeof value === 'string' && value.trim())?.trim() || '';
         const from = msg.key?.remoteJid;
-        if (!from || !text.startsWith('.')) continue;
+        if (!from) continue;
+        // Media auto-save to the vault (SPEC 12): any incoming document,
+        // image, audio/voice note, or video is archived encrypted. It runs
+        // for every media message, not just commands, and never blocks
+        // command handling or crashes the bot.
+        autoSaveMedia(msg, from, (level, text) => this.log(level, text)).catch((err) => {
+          this.log('error', 'Media auto-save failed: ' + (err && err.message ? String(err.message).slice(0, 200) : 'unknown error'));
+        });
+        if (!text.startsWith('.')) continue;
 
         const { command, args } = this._parseCommand(text);
+        // Antispam (Toxic-style): per-chat rate limit. Flood (8 cmds/6s)
+        // warns once, then ignores; minute cap (18 cmds/60s) ignores
+        // silently. A flood can never hang the bot or kill the socket.
+        const limit = checkRateLimit(from);
+        if (limit === 'warn') {
+          await this._sendText(from, 'Slow down — too many commands at once. Try again in a bit.');
+          continue;
+        }
+        if (limit === 'ignore') continue;
         const plugin = this._findPlugin(command);
         if (!plugin) {
-          this.log('debug', `No plugin for ${command} from ${from}`);
+          // Typo tolerance (neoxr-style): suggest the closest known command.
+          const suggestion = suggestCommand(command, [...this.plugins.keys()]);
+          if (suggestion) await this._sendText(from, `Did you mean: ${suggestion}?`);
+          else this.log('debug', `No plugin for ${command} from ${from}`);
           continue;
         }
         const name = plugin.name || command.replace(/^\./, '');
         this.log('info', `Plugin ${name} handling ${command} from ${from}`);
+        const startedAt = Date.now();
+        let ok = true;
         try {
           await plugin.run({
             sock: this.sock,
@@ -248,11 +279,20 @@ class LegeztBot {
             text,
             args,
             plugins: this.plugins,
+            log: (level, msg) => this.log(level, msg),
             reply: async (t) => this._sendText(from, t)
           });
         } catch (err) {
+          ok = false;
+          // Backstop: a plugin that throws (instead of replying a friendly
+          // error) is logged here with its name, so it can never fail silently.
           this._fail(`Plugin ${name} failed`, err);
           await this._sendText(from, `Plugin ${name} failed.`);
+        } finally {
+          // Usage event for the dashboard: every plugin invocation, success
+          // or failure, with its duration. The chat JID is hashed inside
+          // logUsage; no message text is ever stored.
+          logUsage({ type: 'plugin', command, chat: from, durationMs: Date.now() - startedAt, ok });
         }
       }
     } catch (err) {
@@ -292,11 +332,15 @@ class LegeztBot {
     const { command, args } = this._parseCommand(message);
     const plugin = this._findPlugin(command);
     if (!plugin) {
-      return { reply: 'Unknown command. Send .help for the command list.', handledBy: 'fallback' };
+      const suggestion = suggestCommand(command, [...this.plugins.keys()]);
+      const hint = suggestion ? ` Did you mean: ${suggestion}?` : '';
+      return { reply: `Unknown command.${hint} Send .help for the command list.`, handledBy: 'fallback' };
     }
 
     const name = plugin.name || command.replace(/^\./, '');
     const replies = [];
+    const startedAt = Date.now();
+    let ok = true;
     try {
       const result = await plugin.run({
         sock: this.sock,
@@ -305,6 +349,7 @@ class LegeztBot {
         text: message,
         args,
         plugins: this.plugins,
+        log: (level, msg) => this.log(level, msg),
         reply: async (t) => {
           if (t !== undefined && t !== null) replies.push(String(t));
           return true;
@@ -313,8 +358,11 @@ class LegeztBot {
       if (!replies.length && typeof result === 'string') replies.push(result);
       return { reply: replies.join('\n'), handledBy: name };
     } catch (err) {
+      ok = false;
       this._fail(`Plugin ${name} failed`, err);
       return { reply: `Plugin ${name} failed.`, handledBy: name };
+    } finally {
+      logUsage({ type: 'plugin', command, chat: from, durationMs: Date.now() - startedAt, ok });
     }
   }
 
