@@ -11,7 +11,7 @@ if (
     $qr !== null
     && isset($qr['status'])
     && is_string($qr['status'])
-    && in_array($qr['status'], ['waiting', 'connected', 'unknown'], true)
+    && in_array($qr['status'], ['waiting', 'connected', 'unknown', 'disconnected', 'starting'], true)
 ) {
     $status = $qr['status'];
 }
@@ -58,8 +58,20 @@ if ($qr !== null && isset($qr['lastError']) && is_string($qr['lastError'])) {
     <?php if ($qr === null): ?>
         <section class="card error">
             <h2>QR service unavailable</h2>
-            <p>QR service is not responding (port 8080). Check that qr-session is running.</p>
+            <p>legezt-bot is not responding (port 3001). Check that the legezt-bot service is running.</p>
             <p><a class="btn" href="?page=connect">Retry</a></p>
+        </section>
+    <?php elseif ($status === 'disconnected'): ?>
+        <section class="card">
+            <h2>WhatsApp disconnected</h2>
+            <p>The bot is paused. Your session and data are kept — nothing was deleted.</p>
+            <form method="post" action="index.php?action=reconnect">
+                <input type="hidden" name="csrf" value="<?= legezt_esc(csrf_token()) ?>">
+                <button type="submit" class="btn primary">Reconnect WhatsApp</button>
+            </form>
+            <?php if ($lastError !== null): ?>
+                <p class="error-detail">Last error: <?= legezt_esc($lastError) ?></p>
+            <?php endif; ?>
         </section>
     <?php elseif ($status === 'connected'): ?>
         <section class="card success">
