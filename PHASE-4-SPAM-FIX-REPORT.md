@@ -55,10 +55,17 @@ Regressions green: Phase 4 chats **47/47**, chats API **15/15**.
 
 ## Deploy + live verification
 
-- Commit(s): (see git log) — one push via gh CLI.
-- GitHub Actions run: (see below) — success.
-- Live check (curl from the VM): dashboard 200, /health
-  `whatsapp: connected, botUp: true`.
+- Commit: **2c2dce7** — "Spam fix: freshness gate + message-ID dedup so
+  restarts never re-answer old commands" (one push via gh CLI; 3 files:
+  legezt-bot/bot.js, legezt-bot/test/test_spam_fix.js,
+  PHASE-4-SPAM-FIX-REPORT.md).
+- GitHub Actions run **44060272048** — completed, success, 17s.
+- Live check (my own curl, twice, 7s apart): dashboard **200**,
+  /health `{"ok":true,"whatsapp":"connected","levanterUp":true,"botUp":true,"storage_used_mb":0.03}`
+  both times. The deploy restarted the bot via PM2 and it reconnected
+  cleanly with the session persisted (no re-scan needed) — and this very
+  restart is the first one protected by the gate: any old command
+  re-delivered on this reconnect is now ignored instead of answered.
 
 ## Honest limits
 
