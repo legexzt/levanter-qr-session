@@ -44,8 +44,8 @@ In `legezt-bot/ops-api.js`:
 
 ## Live verification
 
-- GitHub Actions run **TBD** — deploy via the existing workflow.
-- My own curl after deploy: dashboard HTTP 200, `/health` `botUp:true` + `whatsapp:connected`.
+- GitHub Actions run **44059442932** — completed, success, 16s. The deploy log confirms PM2 `restartProcessId` on legezt-bot and `legezt-bot http=200` + `legezt php http=200` health checks.
+- My own curl after deploy: dashboard HTTP 200, Chats page HTTP 200, `/health` `{"ok":true,"whatsapp":"connected","levanterUp":true,"botUp":true,"storage_used_mb":0.03}`. (Note: `/health`'s `uptime` is the EC2 host uptime from /proc/uptime, not the bot process uptime — the bot itself restarted at deploy per the PM2 log.)
 - **Honest limit:** archiving starts at deploy — messages from BEFORE this deploy are NOT recoverable (Baileys does not backfill full history), so chats fill up from now onward, not retroactively. The Chats page says this on the page itself.
 
 ## Files changed
