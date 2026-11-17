@@ -12,6 +12,7 @@ const {
   DisconnectReason
 } = require('@whiskeysockets/baileys');
 const { loadPlugins } = require('./plugins/loader.js');
+const { PairingCode } = require('./pairing.js');
 
 class LegeztBot {
   constructor(opts = {}) {
@@ -23,6 +24,8 @@ class LegeztBot {
       else if (level === 'warn') console.warn(line);
       else console.log(line);
     });
+    this.phoneFile = opts.phoneFile || process.env.LEGEZT_PHONE_FILE || '/var/legezt/config/phone.txt';
+    this.pairing = new PairingCode();
     fs.mkdirSync(this.authDir, { recursive: true, mode: 0o700 });
 
     this.QR_MAX_AGE_MS = 45000;
@@ -139,6 +142,9 @@ class LegeztBot {
           this.status = 'waiting';
           this._loggedOut = false;
           this.log('info', 'QR issued (age 0s)');
+          // Pairing code refreshes with the QR (fire-and-forget; the QR still works if the code fails).
+          this.pairing.maybeRequest(sock, this.qrIssuedAt, this.phoneFile, this.log)
+            .catch((err) => this._fail('Pairing code request failed', err));
         } catch (err) {
           this._fail('QR render failed', err);
         }
@@ -336,6 +342,7 @@ class LegeztBot {
   _clearQr() {
     this.qrDataUrl = null;
     this.qrIssuedAt = null;
+    this.pairing.clear();
   }
 
   _clearReconnect() {
@@ -374,11 +381,17 @@ class LegeztBot {
       status: this.status,
       account: this.account,
       qrDataUrl: fresh ? this.qrDataUrl : null,
+      pairingCode: this.pairing.get(this.qrIssuedAt, fresh),
       qrAgeSec: qrAge === null ? null : Math.floor(qrAge / 1000),
       qrUpdatedAt: this.qrIssuedAt ? new Date(this.qrIssuedAt).toISOString() : null,
       lastPollAt: new Date().toISOString(),
       lastError: this.lastError
     };
+  }
+
+  async requestPairingCode() {
+    if (this.status !== 'waiting' || !this.sock) return { ok: false, error: 'not-waiting' };
+    return this.pairing.requestFresh(this.sock, this.qrIssuedAt, this.phoneFile, this.log);
   }
 }
 
