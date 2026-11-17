@@ -46,6 +46,14 @@ if ($qr !== null && isset($qr['qrAgeSec']) && is_numeric($qr['qrAgeSec'])) {
     $qrAgeSec = max(0, (int) $qr['qrAgeSec']);
 }
 
+$pairingCode = null;
+if ($qr !== null && isset($qr['pairingCode']) && is_string($qr['pairingCode'])) {
+    $candidate = strtoupper($qr['pairingCode']);
+    if (preg_match('/^[A-Z0-9]{8}$/', $candidate) === 1) {
+        $pairingCode = $candidate;
+    }
+}
+
 $lastError = null;
 if ($qr !== null && isset($qr['lastError']) && is_string($qr['lastError'])) {
     $candidate = trim($qr['lastError']);
@@ -64,7 +72,7 @@ if ($qr !== null && isset($qr['lastError']) && is_string($qr['lastError'])) {
     <?php elseif ($status === 'disconnected'): ?>
         <section class="card">
             <h2>WhatsApp disconnected</h2>
-            <p>The bot is paused. Your session and data are kept — nothing was deleted.</p>
+            <p>The bot is paused. Your session and data are kept &mdash; nothing was deleted.</p>
             <form method="post" action="index.php?action=reconnect">
                 <input type="hidden" name="csrf" value="<?= legezt_esc(csrf_token()) ?>">
                 <button type="submit" class="btn primary">Reconnect WhatsApp</button>
@@ -103,6 +111,22 @@ if ($qr !== null && isset($qr['lastError']) && is_string($qr['lastError'])) {
                 <li>Go to Linked devices.</li>
                 <li>Tap Link a device and scan this code.</li>
             </ol>
+            <?php if ($pairingCode !== null): ?>
+                <div class="pairing-block" id="pairing-block">
+                    <p class="pairing-label">Or link with a code instead of scanning:</p>
+                    <p class="pairing-code" id="pairing-code" data-pairing-code="<?= legezt_esc($pairingCode) ?>"><?= legezt_esc(substr($pairingCode, 0, 4) . '-' . substr($pairingCode, 4)) ?></p>
+                    <div class="pairing-actions">
+                        <button type="button" class="btn" id="copy-pairing-code">Copy code</button>
+                        <button type="button" class="btn" id="refresh-pairing-code" data-csrf="<?= legezt_esc(csrf_token()) ?>">New code</button>
+                    </div>
+                    <p class="muted pairing-note">WhatsApp &rarr; Linked devices &rarr; Link with phone number &rarr; enter this code.</p>
+                    <p class="muted" id="pairing-status" role="status"></p>
+                </div>
+            <?php else: ?>
+                <div class="pairing-block" id="pairing-block">
+                    <p class="muted">Pairing code is not available right now &mdash; you can still scan the QR above.</p>
+                </div>
+            <?php endif; ?>
             <?php if ($qrAgeSec !== null): ?>
                 <p>QR updated <?= legezt_esc((string) $qrAgeSec) ?> seconds ago.</p>
             <?php else: ?>
@@ -113,11 +137,11 @@ if ($qr !== null && isset($qr['lastError']) && is_string($qr['lastError'])) {
     <?php elseif ($status === 'waiting'): ?>
         <section class="card">
             <div class="spinner" aria-hidden="true"></div>
-            <p>Waiting for a QR code — the bot is starting up. This page refreshes automatically.</p>
+            <p>Waiting for a QR code &mdash; the bot is starting up. This page refreshes automatically.</p>
         </section>
     <?php else: ?>
         <section class="card">
-            <p>Status unknown — the bot may be restarting. This page refreshes automatically.</p>
+            <p>Status unknown &mdash; the bot may be restarting. This page refreshes automatically.</p>
             <?php if ($lastError !== null): ?>
                 <p class="error-detail">Last error: <?= legezt_esc($lastError) ?></p>
             <?php endif; ?>
