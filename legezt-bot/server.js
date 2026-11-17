@@ -9,6 +9,7 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 const AUTH_DIR = process.env.LEGEZT_AUTH_DIR || '/var/legezt/auth';
 const PLUGIN_DIR = process.env.LEGEZT_PLUGIN_DIR || require('path').join(__dirname, 'plugins');
 const RELAY_KEY_FILE = process.env.LEGEZT_RELAY_KEY_FILE || '/var/legezt/config/relay.key';
+const PHONE_FILE = process.env.LEGEZT_PHONE_FILE || '/var/legezt/config/phone.txt';
 
 function log(level, msg) {
   const line = `[${new Date().toISOString()}] [${level.toUpperCase()}] ${msg}`;
@@ -23,7 +24,7 @@ process.on('unhandledRejection', (err) => log('error', 'unhandledRejection: ' + 
 process.on('uncaughtException', (err) => log('error', 'uncaughtException: ' + (err && err.message ? err.message : String(err))));
 
 async function main() {
-  const bot = new LegeztBot({ authDir: AUTH_DIR, pluginDir: PLUGIN_DIR, log });
+  const bot = new LegeztBot({ authDir: AUTH_DIR, pluginDir: PLUGIN_DIR, phoneFile: PHONE_FILE, log });
   const app = createApi(bot, { relayKeyFile: RELAY_KEY_FILE, log });
   const server = app.listen(PORT, '127.0.0.1', () => {
     log('info', 'legezt-bot API listening on 127.0.0.1:' + PORT);
