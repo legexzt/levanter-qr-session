@@ -55,6 +55,19 @@ if [ ! -f "$LEGEZT_DIR/config/relay.key" ]; then
   echo "relay key created at $LEGEZT_DIR/config/relay.key"
 fi
 
+# Owner phone number for the WhatsApp pairing code (digits only, country
+# code, no '+'). Created empty if missing - the number itself is NEVER in
+# Git. Set it once on the EC2, then the next QR cycle issues a pairing
+# code automatically (no bot restart needed - the file is read fresh).
+if [ ! -f "$LEGEZT_DIR/config/phone.txt" ]; then
+  sudo mkdir -p "$LEGEZT_DIR/config"
+  sudo touch "$LEGEZT_DIR/config/phone.txt"
+  sudo chown ubuntu:ubuntu "$LEGEZT_DIR/config/phone.txt"
+  sudo chmod 0600 "$LEGEZT_DIR/config/phone.txt"
+  echo "NOTE: pairing code disabled - set the owner phone number once:"
+  echo "  echo -n '<digits-only number with country code>' | sudo tee $LEGEZT_DIR/config/phone.txt >/dev/null"
+fi
+
 if pm2 describe "$BOT_NAME" >/dev/null 2>&1; then
   pm2 restart "$BOT_NAME" --update-env
 else
